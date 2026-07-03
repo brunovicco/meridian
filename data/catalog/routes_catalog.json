@@ -1,0 +1,73 @@
+{
+  "version": "v1",
+  "intents": {
+    "knowledge_qa": {
+      "positive": [
+        "how do I configure authentication for the payments service",
+        "what is the retry policy for the notifications pipeline",
+        "how does the onboarding flow handle failed KYC",
+        "where is the runbook for a database failover",
+        "explain how the rate limiter works in the gateway",
+        "what are the steps to rotate a service credential",
+        "how do we handle idempotency in the transfer API",
+        "what is the SLA for the fraud scoring service"
+      ],
+      "negative": [
+        "who owns the payments service",
+        "show me the implementation of the retry decorator",
+        "how many services are in the catalog"
+      ]
+    },
+    "code_lookup": {
+      "positive": [
+        "show me the implementation of the retry decorator",
+        "where is the function that validates a CPF",
+        "find the class that builds the RediSearch query",
+        "what does the sanitize_query method do",
+        "show the code for the semantic router scoring",
+        "where is the ToolNode wired into the graph",
+        "find the module that handles token resolution",
+        "show me how embeddings are normalized in code"
+      ],
+      "negative": [
+        "how do I configure authentication for the payments service",
+        "who owns the payments service",
+        "what is the retry policy for the notifications pipeline"
+      ]
+    },
+    "structured_query": {
+      "positive": [
+        "who owns the payments service",
+        "which team is responsible for the gateway",
+        "how many services depend on the auth service",
+        "list all services owned by the platform team",
+        "what services are in the fraud domain",
+        "who is on call for the notifications service",
+        "which services have no owner assigned",
+        "count the services with tier one criticality"
+      ],
+      "negative": [
+        "how do I configure authentication for the payments service",
+        "show me the implementation of the retry decorator",
+        "explain how the rate limiter works"
+      ]
+    },
+    "greeting": {
+      "positive": [
+        "hi there",
+        "hello",
+        "good morning",
+        "hey how are you",
+        "thanks a lot",
+        "that was helpful thanks",
+        "who are you",
+        "what can you do"
+      ],
+      "negative": [
+        "how do I configure authentication",
+        "who owns the payments service",
+        "show me the retry decorator code"
+      ]
+    }
+  }
+}

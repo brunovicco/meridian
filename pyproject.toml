@@ -1,0 +1,70 @@
+[project]
+name = "meridian"
+version = "0.1.0"
+description = "Reference architecture for an internal engineering knowledge platform: semantic router, DSPy-style output contracts, RAG with access control, on Redis Stack."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Bruno Vicco" }]
+dependencies = [
+    "pydantic==2.13.4",
+    "numpy==2.2.6",
+]
+
+[project.optional-dependencies]
+# Real backends. The default local run needs none of these - fake providers and
+# the in-memory store cover it. Install `redis` to run against Redis Stack, and
+# the azure/dspy extras to wire in the production providers.
+# Versions are pinned exactly - see uv.lock for the full resolved graph.
+redis = ["redis==8.0.1"]
+azure = ["openai==2.44.0", "httpx==0.28.1"]
+dspy = ["dspy-ai==3.2.1"]
+grok = ["dspy-ai==3.2.1"]
+api = ["fastapi==0.136.3", "uvicorn==0.48.0"]
+dev = ["pytest==9.0.3", "ruff==0.15.20", "mypy==2.1.0"]
+
+[project.scripts]
+meridian = "meridian.interfaces.cli.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------------------
+# Ruff: linting and formatting. A single tool for both keeps the toolchain
+# small. The selected rule families cover correctness (E/F), imports (I),
+# bugbears (B), comprehensions (C4), pyupgrade (UP), and docstring presence (D).
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "C4", "UP", "D"]
+ignore = [
+    "D203",  # one-blank-line-before-class - conflicts with D211
+    "D213",  # multi-line-summary-second-line - conflicts with D212
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests document themselves through names; full docstring coverage is noise there.
+"tests/**" = ["D100", "D101", "D102", "D103", "D104"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["meridian"]
+mypy_path = "src"
+ignore_missing_imports = true
+disallow_untyped_defs = true

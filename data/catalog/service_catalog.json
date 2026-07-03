@@ -1,0 +1,88 @@
+{
+  "services": [
+    {
+      "service_id": "svc-payments",
+      "name": "payments-api",
+      "team": "payments",
+      "domain": "payments",
+      "tier": "tier1",
+      "lifecycle": "active",
+      "has_owner": true,
+      "dependencies": 6,
+      "description": "Core payments processing API",
+      "visibility": ["payments", "platform"]
+    },
+    {
+      "service_id": "svc-transfers",
+      "name": "transfer-service",
+      "team": "payments",
+      "domain": "payments",
+      "tier": "tier1",
+      "lifecycle": "active",
+      "has_owner": true,
+      "dependencies": 4,
+      "description": "Money transfer orchestration with idempotency",
+      "visibility": ["payments", "platform"]
+    },
+    {
+      "service_id": "svc-notifications",
+      "name": "notifications-pipeline",
+      "team": "notifications",
+      "domain": "notifications",
+      "tier": "tier2",
+      "lifecycle": "active",
+      "has_owner": true,
+      "dependencies": 3,
+      "description": "Delivery pipeline with retry and dead-letter queue",
+      "visibility": ["notifications", "platform"]
+    },
+    {
+      "service_id": "svc-gateway",
+      "name": "api-gateway",
+      "team": "platform",
+      "domain": "gateway",
+      "tier": "tier1",
+      "lifecycle": "active",
+      "has_owner": true,
+      "dependencies": 9,
+      "description": "Edge gateway with token-bucket rate limiting",
+      "visibility": ["platform", "sre"]
+    },
+    {
+      "service_id": "svc-fraud",
+      "name": "fraud-scoring",
+      "team": "fraud",
+      "domain": "fraud",
+      "tier": "tier1",
+      "lifecycle": "active",
+      "has_owner": true,
+      "dependencies": 5,
+      "description": "Real-time fraud scoring with rule-based fallback",
+      "visibility": ["fraud", "platform"]
+    },
+    {
+      "service_id": "svc-identity",
+      "name": "identity-provider",
+      "team": "platform",
+      "domain": "identity",
+      "tier": "tier1",
+      "lifecycle": "active",
+      "has_owner": true,
+      "dependencies": 2,
+      "description": "Authentication and credential issuance",
+      "visibility": ["platform", "security"]
+    },
+    {
+      "service_id": "svc-legacy-batch",
+      "name": "legacy-batch-runner",
+      "team": "platform",
+      "domain": "gateway",
+      "tier": "tier2",
+      "lifecycle": "deprecated",
+      "has_owner": false,
+      "dependencies": 1,
+      "description": "Deprecated nightly batch job, no current owner",
+      "visibility": ["platform", "sre"]
+    }
+  ]
+}
