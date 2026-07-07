@@ -252,6 +252,15 @@ and `MERIDIAN_LLM_BACKEND=azure` and provide the Azure variables (see
 backoff and jitter, corporate TLS trust) with the SDK call marked as the single
 documented gap - filling it in does not touch any other layer.
 
+To use a **free, real semantic embedder** with no credentials at all, set
+`MERIDIAN_EMBEDDING_BACKEND=local` and `MERIDIAN_EMBEDDING_DIM=384` after
+`uv sync --extra local`. This runs `sentence-transformers/all-MiniLM-L6-v2`
+locally (CPU-friendly, ~80MB, cached after first download) via
+`SentenceTransformerEmbeddingProvider` - unlike the Azure skeleton, this path
+is fully implemented, so it is the fastest way to see real semantic routing
+and retrieval behaviour instead of the fake hashing embedder's lexical
+approximation.
+
 That substitutability is the Dependency Inversion Principle in practice: swap
 happens at `interfaces/composition.py`, one `if` per component, and nothing
 upstream changes.

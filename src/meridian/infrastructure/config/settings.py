@@ -23,7 +23,7 @@ class Settings:
     """Vector store backend: ``memory`` or ``redis``."""
 
     embedding_backend: str
-    """Embedding provider: ``fake`` or ``azure``."""
+    """Embedding provider: ``fake``, ``azure``, or ``local`` (sentence-transformers)."""
 
     llm_backend: str
     """LLM provider: ``fake`` or ``azure``."""

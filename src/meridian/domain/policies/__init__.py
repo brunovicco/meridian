@@ -115,7 +115,7 @@ class RoutingPolicy:
         distribution differs from a real semantic model's. Any other backend
         uses the production calibration.
 
-        :param backend: The embedding backend name (``fake`` or ``azure``).
+        :param backend: The embedding backend name (``fake``, ``azure``, or ``local``).
         :returns: A :class:`RoutingPolicy` calibrated for that backend.
         """
         if backend == "fake":

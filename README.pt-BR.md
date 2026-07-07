@@ -189,6 +189,8 @@ MERIDIAN_BACKEND=redis uv run python -m meridian.interfaces.cli.main --demo
 
 Para usar embeddings/LLM do **Azure OpenAI**, configure `MERIDIAN_EMBEDDING_BACKEND=azure` e `MERIDIAN_LLM_BACKEND=azure` e forneça as variáveis Azure (veja `.env.example`). As classes de provedor em `infrastructure/embeddings/` e `infrastructure/llm/` trazem o scaffolding de produção (retry com backoff e jitter, confiança TLS corporativa) com a chamada SDK marcada como a única lacuna documentada, preenchê-la não toca nenhuma outra camada.
 
+Para usar um embedder semântico **real e gratuito**, sem credencial nenhuma, configure `MERIDIAN_EMBEDDING_BACKEND=local` e `MERIDIAN_EMBEDDING_DIM=384` depois de `uv sync --extra local`. Isso roda o `sentence-transformers/all-MiniLM-L6-v2` localmente (leve, ~80MB, fica em cache após o primeiro download) via `SentenceTransformerEmbeddingProvider` - diferente do skeleton do Azure, esse caminho está totalmente implementado, então é a forma mais rápida de ver roteamento e recuperação semânticos de verdade em vez da aproximação lexical do embedder fake.
+
 Essa substituibilidade é o Princípio de Inversão de Dependência na prática: a troca acontece em `interfaces/composition.py`, um `if` por componente, e nada acima muda.
 
 ---

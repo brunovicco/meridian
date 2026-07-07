@@ -18,6 +18,7 @@ dependencies = [
 # Versions are pinned exactly - see uv.lock for the full resolved graph.
 redis = ["redis==8.0.1"]
 azure = ["openai==2.44.0", "httpx==0.28.1"]
+local = ["sentence-transformers==3.3.1"]
 dspy = ["dspy-ai==3.2.1"]
 grok = ["dspy-ai==3.2.1"]
 api = ["fastapi==0.136.3", "uvicorn==0.48.0"]

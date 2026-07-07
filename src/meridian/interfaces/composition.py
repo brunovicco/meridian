@@ -47,6 +47,16 @@ def build_embedder(settings: Settings) -> EmbeddingProvider:
         from meridian.infrastructure.embeddings.azure_provider import AzureEmbeddingProvider
 
         return AzureEmbeddingProvider(dimension=settings.embedding_dimension)
+    if settings.embedding_backend == "local":
+        try:
+            from meridian.infrastructure.embeddings.sentence_transformer_provider import (
+                SentenceTransformerEmbeddingProvider,
+            )
+
+            return SentenceTransformerEmbeddingProvider()
+        except RuntimeError:
+            # sentence-transformers missing: fall back so the demo still runs.
+            return FakeEmbeddingProvider(dimension=settings.embedding_dimension)
     return FakeEmbeddingProvider(dimension=settings.embedding_dimension)
 
 
