@@ -95,8 +95,8 @@ def build_catalog_store(settings: Settings, tracer: Tracer) -> CatalogStore:
 def build_llm(settings: Settings) -> LLMProvider:
     """Choose the LLM provider from configuration.
 
-    The ``grok`` backend runs the real DSPy modules on Grok (xAI). Because it
-    requires the ``dspy`` package and ``XAI_API_KEY``, it degrades gracefully: if
+    The ``groq`` backend runs the real DSPy modules on Groq. Because it
+    requires the ``dspy`` package and ``GROQ_API_KEY``, it degrades gracefully: if
     either is missing, the fake provider is used so the demo still runs. This is
     the one place that decision is made.
 
@@ -107,13 +107,13 @@ def build_llm(settings: Settings) -> LLMProvider:
         from meridian.infrastructure.llm.providers import AzureLLMProvider
 
         return AzureLLMProvider()
-    if settings.llm_backend in ("grok", "dspy"):
+    if settings.llm_backend in ("groq", "dspy"):
         try:
-            from meridian.infrastructure.llm.providers import GrokDSPyLLMProvider
+            from meridian.infrastructure.llm.providers import GroqDSPyLLMProvider
 
-            return GrokDSPyLLMProvider()
+            return GroqDSPyLLMProvider()
         except RuntimeError:
-            # dspy missing or XAI_API_KEY absent: fall back so the demo still runs.
+            # dspy missing or GROQ_API_KEY absent: fall back so the demo still runs.
             return FakeLLMProvider()
     return FakeLLMProvider()
 

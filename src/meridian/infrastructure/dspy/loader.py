@@ -15,7 +15,7 @@ workflow a first-class operation rather than an afterthought.
 from pathlib import Path
 from typing import Any
 
-from meridian.infrastructure.dspy.grok import dspy_available
+from meridian.infrastructure.dspy.groq import dspy_available
 
 
 def load_compiled_program(module: Any, artifact_path: Path) -> bool:

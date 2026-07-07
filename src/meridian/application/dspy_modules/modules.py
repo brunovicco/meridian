@@ -5,9 +5,9 @@
 through the same Pydantic contract the rest of the system uses, so the real
 DSPy path and the fake path behave identically from the caller's point of view.
 
-Infrastructure-specific DSPy code (Grok configuration, the grounded-answer
+Infrastructure-specific DSPy code (Groq configuration, the grounded-answer
 signature, the Refine self-correction module) lives in
-``infrastructure/dspy/grok.py`` because it depends on external services, not on
+``infrastructure/dspy/groq.py`` because it depends on external services, not on
 application-layer abstractions.
 """
 

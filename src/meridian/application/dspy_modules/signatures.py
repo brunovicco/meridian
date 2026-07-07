@@ -5,8 +5,8 @@ subclasses ``dspy.Signature`` when the package is installed; when it's not, the
 module remains importable so the fake path still runs without errors.
 
 Grounding signatures and the reward function (used by the generation pipeline)
-live in ``infrastructure/dspy/grok.py`` because they belong to the infrastructure
-layer alongside :class:`GrokDSPyLLMProvider`.
+live in ``infrastructure/dspy/groq.py`` because they belong to the infrastructure
+layer alongside :class:`GroqDSPyLLMProvider`.
 """
 
 try:  # pragma: no cover - exercised only with dspy installed

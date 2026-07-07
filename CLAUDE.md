@@ -27,9 +27,9 @@ The pieces that matter:
   representations: an indexed slim projection for search, a fat body fetched by
   `JSON.GET` on demand. Search must never read the fat body.
 - **DSPy modules** (`application/dspy_modules/`) - real `dspy.Predict` routing
-  and `dspy.Refine` self-correction with a grounding reward, run on Grok (xAI).
-  The fake provider is the default; the Grok path degrades to it when `dspy` or
-  `XAI_API_KEY` is absent.
+  and `dspy.Refine` self-correction with a grounding reward, run on Groq.
+  The fake provider is the default; the Groq path degrades to it when `dspy` or
+  `GROQ_API_KEY` is absent.
 - **Structured query** (`application/query/`) - a typed filter compiled into an
   ACL-scoped, injection-sanitised RediSearch expression over the service
   catalog. The structured counterpart to RAG: the pattern follows the shape of
@@ -103,7 +103,7 @@ directly.
    tunables outside `infrastructure/config/settings.py`.
 6. **The fake providers must keep the whole system runnable with zero setup.**
    Any change must preserve `python -m meridian.interfaces.cli.main --demo`
-   working with no network and no credentials. The Grok/DSPy backend is opt-in
+   working with no network and no credentials. The Groq/DSPy backend is opt-in
    and must always fall back to the fake provider when unavailable.
 7. **Metrics must never break the request path.** Backend failures are
    swallowed; durable writes stay off the hot path.

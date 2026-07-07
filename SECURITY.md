@@ -29,6 +29,6 @@ within 7 days.
 
 ## Credentials
 
-All external service credentials (Azure OpenAI, xAI/Grok) are supplied through
+All external service credentials (Azure OpenAI, Groq) are supplied through
 environment variables. Never commit a `.env` file with real keys; only
 `.env.example` (with placeholder values) belongs in version control.

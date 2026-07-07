@@ -24,7 +24,7 @@ O projeto foi criado para demonstrar um conjunto específico de práticas de eng
 | **Contrato de saída de LLM** | `application/services/query_understanding.py` | Schema Pydantic + coerção que absorve desvios de formato (estilo DSPy) |
 | **RAG com controle de acesso** | `application/pipelines/rag_pipeline.py` | Filtro ACL em tempo de recuperação, citações obrigatórias, "não sei" honesto |
 | **Modelo fat/slim** | `domain/models/knowledge.py`, stores | Projeção slim para busca, documento fat buscado sob demanda via JSON.GET |
-| **DSPy (real) + Grok** | `infrastructure/dspy/` | `dspy.Predict` para roteamento + `dspy.Refine` com recompensa de fundamentação, no Grok (xAI); fallback fake por padrão |
+| **DSPy (real) + Groq** | `infrastructure/dspy/` | `dspy.Predict` para roteamento + `dspy.Refine` com recompensa de fundamentação, no Groq; fallback fake por padrão |
 | **Clean Architecture/SOLID** | toda a árvore | Dependências apontam para dentro; concretizações escolhidas apenas na composition root |
 | **Configuração twelve-factor** | `infrastructure/config/settings.py` | Todas as configurações via variáveis de ambiente |
 | **Vector store Redis Stack** | `infrastructure/redis/` | KNN com RediSearch e filtro ACL via metadados |
@@ -155,19 +155,19 @@ A **projeção slim** (título, snippet, fonte, ACL) é um hash indexado que o K
 
 ---
 
-## DSPy real no Grok, com fallback fake por padrão
+## DSPy real no Groq, com fallback fake por padrão
 
-Os contratos de roteamento e geração são suportados por **módulos DSPy reais** quando você opta por eles (`dspy.Predict` para roteamento e `dspy.Refine` para geração) rodando no **Grok (xAI)** via `XAI_API_KEY`.
+Os contratos de roteamento e geração são suportados por **módulos DSPy reais** quando você opta por eles (`dspy.Predict` para roteamento e `dspy.Refine` para geração) rodando no **Groq** via `GROQ_API_KEY`.
 
 ```bash
-uv sync --extra grok
-export XAI_API_KEY=xai-...
-MERIDIAN_LLM_BACKEND=grok uv run python -m meridian.interfaces.cli.main --demo
+uv sync --extra groq
+export GROQ_API_KEY=gsk_...
+MERIDIAN_LLM_BACKEND=groq uv run python -m meridian.interfaces.cli.main --demo
 ```
 
 O `DSPyRefineModule` é o mais interessante: ele gera uma resposta, pontua com uma **recompensa de fundamentação** (ela cita uma fonte? as afirmações se sobrepõem ao contexto? evita suposições não suportadas?) e regera até um orçamento de tentativas até que a pontuação supere o threshold - o padrão de autocorreção de um advisor de compliance de produção, adaptado para um domínio de conhecimento. A saída ainda passa pelo mesmo contrato de coerção Pydantic que o caminho fake, então o desvio é absorvido de forma idêntica.
 
-Crucialmente, **o provedor fake é o padrão**, e o backend Grok degrada para ele graciosamente quando `dspy` ou a key estão ausentes. O demo zero-setup nunca depende da rede, você ativa o Grok deliberadamente, com a key em mãos.
+Crucialmente, **o provedor fake é o padrão**, e o backend Groq degrada para ele graciosamente quando `dspy` ou a key estão ausentes. O demo zero-setup nunca depende da rede, você ativa o Groq deliberadamente, com a key em mãos.
 
 ---
 
@@ -201,7 +201,7 @@ Essa substituibilidade é o Princípio de Inversão de Dependência na prática:
 src/meridian/
   domain/            # modelos (incl. fat/slim), interfaces, políticas; puro, sem I/O
   application/       # roteador, motor, pipelines RAG + estruturado, query builder, módulos dspy
-  infrastructure/    # embeddings, vector/catalog stores, redis, llm (fake/azure/grok), métricas, dspy
+  infrastructure/    # embeddings, vector/catalog stores, redis, llm (fake/azure/groq), métricas, dspy
   interfaces/        # composition root, CLI
 data/catalog/        # intenções + base de conhecimento fat + catálogo de serviços (dados versionados)
 tests/               # unitários (peças puras) + integração (fluxos completos, incl. ACL, estruturado, fat/slim)
@@ -228,4 +228,4 @@ Convenções: todo o código em inglês, docstrings em todos os módulos/classes
 
 ## Notas sobre o escopo
 
-Este é um repositório de estudo/demo. Os provedores fake são léxicos, não semânticos; eles exercitam o encanamento de forma determinística, não a qualidade de um embedder real. Os thresholds do roteador são fornecidos com uma calibração separada para o backend fake (`domain/policies`), o que por si só é um ponto relevante: **thresholds são uma propriedade do modelo de embedding, então trocar de modelo significa recalibrar, não editar prompts.** O caminho DSPy + Grok é real (`dspy.Predict` + `dspy.Refine` com recompensa de fundamentação) e funciona assim que você instala o extra `grok` e define `XAI_API_KEY`; sem eles o sistema cai no provedor fake para que o demo padrão sempre rode. Os provedores Azure estão scaffolded até o ponto em que a única peça faltando é a chamada SDK externa.
+Este é um repositório de estudo/demo. Os provedores fake são léxicos, não semânticos; eles exercitam o encanamento de forma determinística, não a qualidade de um embedder real. Os thresholds do roteador são fornecidos com uma calibração separada para o backend fake (`domain/policies`), o que por si só é um ponto relevante: **thresholds são uma propriedade do modelo de embedding, então trocar de modelo significa recalibrar, não editar prompts.** O caminho DSPy + Groq é real (`dspy.Predict` + `dspy.Refine` com recompensa de fundamentação) e funciona assim que você instala o extra `groq` e define `GROQ_API_KEY`; sem eles o sistema cai no provedor fake para que o demo padrão sempre rode. Os provedores Azure estão scaffolded até o ponto em que a única peça faltando é a chamada SDK externa.

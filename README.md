@@ -32,7 +32,7 @@ of Python, Redis Stack, and pluggable embedding/LLM providers.
 | **LLM output contract** | `application/services/query_understanding.py` | Pydantic schema + coercion that absorbs format drift (DSPy-style) |
 | **RAG with access control** | `application/pipelines/rag_pipeline.py` | Retrieval-time ACL filter, mandatory citations, honest "I don't know" |
 | **Fat/slim data model** | `domain/models/knowledge.py`, stores | Slim projection for search, fat document fetched on demand via JSON.GET |
-| **DSPy (real) + Grok** | `application/dspy_modules/` | `dspy.Predict` routing + `dspy.Refine` self-correction with a grounding reward, on Grok (xAI); fake fallback by default |
+| **DSPy (real) + Groq** | `application/dspy_modules/` | `dspy.Predict` routing + `dspy.Refine` self-correction with a grounding reward, on Groq; fake fallback by default |
 | **Clean Architecture/SOLID** | whole tree | Dependencies point inward; concretions chosen only at the composition root |
 | **Twelve-factor config** | `infrastructure/config/settings.py` | All settings from the environment |
 | **Redis Stack vector store** | `infrastructure/redis/` | RediSearch KNN with a metadata ACL filter |
@@ -196,16 +196,16 @@ Each stage gets the payload it needs, right-sized end to end.
 
 ---
 
-## Real DSPy on Grok, with a fake fallback by default
+## Real DSPy on Groq, with a fake fallback by default
 
 The routing and generation contracts are backed by **real DSPy modules** when you
 opt in - `dspy.Predict` for routing and `dspy.Refine` for generation - running on
-**Grok (xAI)** via `XAI_API_KEY`.
+**Groq** via `GROQ_API_KEY`.
 
 ```bash
-uv sync --extra grok
-export XAI_API_KEY=xai-...
-MERIDIAN_LLM_BACKEND=grok uv run python -m meridian.interfaces.cli.main --demo
+uv sync --extra groq
+export GROQ_API_KEY=gsk_...
+MERIDIAN_LLM_BACKEND=groq uv run python -m meridian.interfaces.cli.main --demo
 ```
 
 The `DSPyRefineModule` is the interesting one: it generates an answer, scores it
@@ -216,9 +216,9 @@ production compliance advisor, adapted to a knowledge domain. The output still
 passes the same Pydantic coercion contract as the fake path, so drift is absorbed
 identically.
 
-Crucially, **the fake provider is the default**, and the Grok backend degrades to
+Crucially, **the fake provider is the default**, and the Groq backend degrades to
 it gracefully when `dspy` or the key is absent. The zero-setup demo never depends
-on the network - you turn Grok on deliberately, with the key in hand.
+on the network - you turn Groq on deliberately, with the key in hand.
 
 ---
 
@@ -273,7 +273,7 @@ upstream changes.
 src/meridian/
   domain/            # models (incl. fat/slim knowledge), interfaces, policy - pure, no I/O
   application/       # router, engine, RAG + structured pipelines, query builder, dspy modules
-  infrastructure/    # embeddings, vector/catalog stores, redis, llm (fake/azure/grok), metrics
+  infrastructure/    # embeddings, vector/catalog stores, redis, llm (fake/azure/groq), metrics
   interfaces/        # composition root, CLI
 data/catalog/        # intents + fat knowledge base + service catalog (versioned data)
 tests/               # unit (pure pieces) + integration (full flows, incl. ACL, structured, fat/slim)
@@ -308,8 +308,8 @@ exercise the plumbing deterministically, not the quality of a real embedder. The
 router thresholds ship with a separate calibration for the fake backend
 (`domain/policies`), which is itself a point worth making: **thresholds are a
 property of the embedding model, so switching models means recalibrating, not
-editing prompts.** The DSPy + Grok path is real (`dspy.Predict` + `dspy.Refine`
-with a grounding reward) and runs once you install the `grok` extra and set
-`XAI_API_KEY`; without them the system falls back to the fake provider so the
+editing prompts.** The DSPy + Groq path is real (`dspy.Predict` + `dspy.Refine`
+with a grounding reward) and runs once you install the `groq` extra and set
+`GROQ_API_KEY`; without them the system falls back to the fake provider so the
 default demo always runs. The Azure providers are scaffolded to the point where
 the only missing piece is the external SDK call.

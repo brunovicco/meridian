@@ -1287,7 +1287,7 @@ dev = [
 dspy = [
     { name = "dspy-ai" },
 ]
-grok = [
+groq = [
     { name = "dspy-ai" },
 ]
 local = [
@@ -1300,7 +1300,7 @@ redis = [
 [package.metadata]
 requires-dist = [
     { name = "dspy-ai", marker = "extra == 'dspy'", specifier = "==3.2.1" },
-    { name = "dspy-ai", marker = "extra == 'grok'", specifier = "==3.2.1" },
+    { name = "dspy-ai", marker = "extra == 'groq'", specifier = "==3.2.1" },
     { name = "fastapi", marker = "extra == 'api'", specifier = "==0.136.3" },
     { name = "httpx", marker = "extra == 'azure'", specifier = "==0.28.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==2.1.0" },
@@ -1313,7 +1313,7 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'local'", specifier = "==3.3.1" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = "==0.48.0" },
 ]
-provides-extras = ["redis", "azure", "local", "dspy", "grok", "api", "dev"]
+provides-extras = ["redis", "azure", "local", "dspy", "groq", "api", "dev"]
 
 [[package]]
 name = "mpmath"

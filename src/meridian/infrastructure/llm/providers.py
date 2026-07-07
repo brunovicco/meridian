@@ -109,35 +109,35 @@ class AzureLLMProvider(LLMProvider):  # pragma: no cover - depends on external S
         )
 
 
-class GrokDSPyLLMProvider(LLMProvider):
-    """LLM provider backed by real DSPy modules running on Grok (xAI).
+class GroqDSPyLLMProvider(LLMProvider):
+    """LLM provider backed by real DSPy modules running on Groq.
 
-    This is the real DSPy path. On construction it configures DSPy to use Grok
-    via ``XAI_API_KEY`` and builds the self-correcting ``DSPyRefineModule``.
+    This is the real DSPy path. On construction it configures DSPy to use Groq
+    via ``GROQ_API_KEY`` and builds the self-correcting ``DSPyRefineModule``.
     Generation prompts (which carry a context block) are answered through the
     Refine loop - generate, score for grounding, regenerate up to the budget.
 
-    Grok is an xAI model, not an Anthropic one; it's wired here because it was
-    chosen as the real backend. If ``dspy`` is not installed or ``XAI_API_KEY``
-    is absent, construction raises so the composition root can fall back to the
+    Groq is not an Anthropic model; it's wired here because it was chosen as
+    the real backend. If ``dspy`` is not installed or ``GROQ_API_KEY`` is
+    absent, construction raises so the composition root can fall back to the
     fake provider - the default demo therefore never depends on this path.
     """
 
     def __init__(self) -> None:
-        """Configure Grok and build the DSPy modules, or fail for fallback."""
-        from meridian.infrastructure.dspy.grok import (
-            configure_grok_lm,
+        """Configure Groq and build the DSPy modules, or fail for fallback."""
+        from meridian.infrastructure.dspy.groq import (
+            configure_groq_lm,
             dspy_available,
         )
 
         if not dspy_available():
-            raise RuntimeError("dspy is not installed; cannot use the Grok/DSPy backend.")
-        if not configure_grok_lm():
-            raise RuntimeError("XAI_API_KEY not set; cannot configure Grok for DSPy.")
+            raise RuntimeError("dspy is not installed; cannot use the Groq/DSPy backend.")
+        if not configure_groq_lm():
+            raise RuntimeError("GROQ_API_KEY not set; cannot configure Groq for DSPy.")
 
         # Imported here (not at module top) because the class is only defined
         # when dspy is installed, which the guard above has confirmed.
-        from meridian.infrastructure.dspy.grok import DSPyRefineModule
+        from meridian.infrastructure.dspy.groq import DSPyRefineModule
 
         self._refine = DSPyRefineModule()
 

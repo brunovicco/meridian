@@ -1,1 +1,1 @@
-"""Infrastructure DSPy adapters: Grok language model configuration and self-correcting generation."""
+"""Infrastructure DSPy adapters: Groq language model configuration and self-correcting generation."""

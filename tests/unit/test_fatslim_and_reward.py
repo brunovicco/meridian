@@ -7,7 +7,7 @@ without the ``dspy`` package because the reward function itself is pure Python.
 """
 
 from meridian.domain.models.knowledge import FatChunk
-from meridian.infrastructure.dspy.grok import grounding_reward
+from meridian.infrastructure.dspy.groq import grounding_reward
 from meridian.infrastructure.observability.tracer import NullTracer
 from meridian.infrastructure.vectorstore.in_memory_store import InMemoryVectorStore
 

@@ -1,12 +1,12 @@
-"""Grok (xAI) DSPy infrastructure: signatures, reward, and the Refine module.
+"""Groq DSPy infrastructure: signatures, reward, and the Refine module.
 
-Contains everything needed to run grounded generation through DSPy on Grok:
+Contains everything needed to run grounded generation through DSPy on Groq:
 
 * DSPy signatures declaring the grounded-answer input/output contract.
 * The grounding reward function that drives ``dspy.Refine`` self-correction.
-* ``configure_grok_lm`` for wiring DSPy to the xAI endpoint.
+* ``configure_groq_lm`` for wiring DSPy to the Groq endpoint.
 * ``DSPyRefineModule``: the self-correcting generation module used by
-  :class:`GrokDSPyLLMProvider`.
+  :class:`GroqDSPyLLMProvider`.
 
 All routing-specific DSPy code (``DSPyRouterModule``, ``KnowledgeRouteSignature``)
 lives in ``application/dspy_modules`` because it wraps the application-layer
@@ -35,36 +35,36 @@ def dspy_available() -> bool:
     return _DSPY_AVAILABLE
 
 
-def configure_grok_lm(
+def configure_groq_lm(
     *,
     model: str | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
 ) -> bool:
-    """Configure DSPy to use Grok (xAI) as its language model.
+    """Configure DSPy to use Groq as its language model.
 
-    Grok is reached through DSPy's ``dspy.LM`` abstraction, which speaks the
-    OpenAI-compatible protocol the xAI API exposes. Configuration is read from
-    the environment (twelve-factor): ``XAI_API_KEY`` for the key, with the model
+    Groq is reached through DSPy's ``dspy.LM`` abstraction, which speaks the
+    OpenAI-compatible protocol the Groq API exposes. Configuration is read from
+    the environment (twelve-factor): ``GROQ_API_KEY`` for the key, with the model
     and base URL overridable.
 
     The call is a no-op returning ``False`` if ``dspy`` is missing or no key is
     present, so the caller can fall back gracefully.
 
-    :param model: Grok model name; defaults to ``$GROK_MODEL`` or a sane default.
-    :param api_key: xAI API key; defaults to ``$XAI_API_KEY``.
-    :param api_base: API base URL; defaults to the xAI endpoint.
-    :returns: ``True`` if DSPy was configured with Grok, ``False`` otherwise.
+    :param model: Groq model name; defaults to ``$GROQ_MODEL`` or a sane default.
+    :param api_key: Groq API key; defaults to ``$GROQ_API_KEY``.
+    :param api_base: API base URL; defaults to the Groq endpoint.
+    :returns: ``True`` if DSPy was configured with Groq, ``False`` otherwise.
     """
     if not _DSPY_AVAILABLE:
         return False
 
-    key = api_key or os.getenv("XAI_API_KEY")
+    key = api_key or os.getenv("GROQ_API_KEY")
     if not key:
         return False
 
-    model_name = model or os.getenv("GROK_MODEL", "xai/grok-2-latest")
-    base = api_base or os.getenv("XAI_API_BASE", "https://api.x.ai/v1")
+    model_name = model or os.getenv("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
+    base = api_base or os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
 
     lm = dspy.LM(model_name, api_key=key, api_base=base)  # pragma: no cover - network
     dspy.configure(lm=lm)  # pragma: no cover - network
