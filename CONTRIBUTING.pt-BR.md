@@ -24,7 +24,7 @@ reprodutível.
 ```bash
 make install   # uv sync --extra dev
 make demo      # verificar que o sistema funciona de ponta a ponta
-make test      # 52 testes, todos devem passar
+make test      # todos os testes devem passar
 ```
 
 Para adicionar uma dependência use `uv add <pacote>` (ou `uv add --optional <extra>

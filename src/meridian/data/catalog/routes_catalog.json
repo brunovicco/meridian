@@ -9,6 +9,7 @@
         "where is the runbook for a database failover",
         "explain how the rate limiter works in the gateway",
         "what are the steps to rotate a service credential",
+        "show me the security post mortem for the payments outage",
         "how do we handle idempotency in the transfer API",
         "what is the SLA for the fraud scoring service"
       ],

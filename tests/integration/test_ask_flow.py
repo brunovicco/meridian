@@ -7,8 +7,12 @@ access-control guarantee that a user never retrieves a chunk outside their
 groups.
 """
 
-from pathlib import Path
+import subprocess
+import sys
+from importlib.resources import files
 
+from meridian.application.services.ask_service import AskService
+from meridian.domain.interfaces import CatalogStore, EmbeddingProvider, VectorStore
 from meridian.domain.models import RouteType, UserContext
 from meridian.infrastructure.config.catalog_loader import (
     load_catalog,
@@ -18,10 +22,10 @@ from meridian.infrastructure.config.catalog_loader import (
 from meridian.infrastructure.config.settings import Settings
 from meridian.interfaces.composition import build_ask_service
 
-_DATA = Path(__file__).resolve().parents[2] / "data" / "catalog"
+_DATA = files("meridian.data.catalog")
 
 
-def _build():
+def _build() -> tuple[AskService, VectorStore, EmbeddingProvider, CatalogStore]:
     """Compose the service with fake providers and seed both stores."""
     settings = Settings(
         backend="memory",
@@ -78,3 +82,51 @@ def test_acl_no_groups_fails_closed() -> None:
     vector = embedder.embed_one("anything")
     no_groups = UserContext(user_id="dan", acl_groups=[])
     assert store.search_slim(vector, no_groups, 5) == []
+
+
+def test_restricted_post_mortem_is_protected_end_to_end() -> None:
+    """The complete ask flow cites the restricted document only for security."""
+    service, _, _, _ = _build()
+    question = "show me the security post mortem for the payments outage"
+
+    security_answer = service.ask(question, UserContext(user_id="carol", acl_groups=["security"]))
+    payments_answer = service.ask(
+        question,
+        UserContext(user_id="alice", acl_groups=["payments", "platform"]),
+    )
+
+    assert "Security Post-Mortem" in {citation.source for citation in security_answer.citations}
+    assert payments_answer.grounded is False
+    assert payments_answer.citations == []
+
+
+def test_cli_rejects_unknown_demo_user() -> None:
+    """A misspelled user cannot inherit Alice's privileged demo groups."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "meridian.interfaces.cli.main",
+            "--user",
+            "mallory",
+            "--ask",
+            "payments authentication",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "invalid choice" in result.stderr
+
+
+def test_seed_catalogs_are_available_as_package_resources() -> None:
+    """The installed CLI can load every JSON resource from the package."""
+    catalog = files("meridian.data.catalog")
+    expected = {
+        "knowledge_base.json",
+        "knowledge_base_fat.json",
+        "routes_catalog.json",
+        "service_catalog.json",
+    }
+    assert expected.issubset({resource.name for resource in catalog.iterdir()})

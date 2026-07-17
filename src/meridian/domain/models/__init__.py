@@ -13,7 +13,7 @@ infrastructure layers behind interfaces defined in ``domain.interfaces``.
 
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class RouteType(str, Enum):
@@ -153,6 +153,17 @@ class Answer(BaseModel):
     citations: list[Citation] = Field(default_factory=list, description="Sources backing the answer.")
     route_type: RouteType = Field(..., description="Which pipeline produced this answer.")
     grounded: bool = Field(default=True, description="False when the model reported insufficient context.")
+
+    @model_validator(mode="after")
+    def _grounded_answers_have_sources(self) -> "Answer":
+        """Reject grounded answers without evidence.
+
+        Keeping this invariant in the domain model prevents a new interface or
+        pipeline from accidentally bypassing the citation guardrail.
+        """
+        if self.grounded and not self.citations:
+            raise ValueError("grounded answers require at least one citation")
+        return self
 
 
 class UserContext(BaseModel):

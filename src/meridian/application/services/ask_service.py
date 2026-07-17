@@ -97,7 +97,7 @@ class AskService:
                 ),
                 citations=[],
                 route_type=RouteType.OUT_OF_SCOPE,
-                grounded=True,
+                grounded=False,
             )
 
         if decision.decision == DecisionType.ASK_DISAMBIGUATION:
@@ -109,7 +109,7 @@ class AskService:
                 ),
                 citations=[],
                 route_type=decision.route_type,
-                grounded=True,
+                grounded=False,
             )
 
         # Structured questions about the service catalog are a query problem,
@@ -117,18 +117,23 @@ class AskService:
         if decision.route_type == RouteType.STRUCTURED_QUERY:
             return self._structured.run(query, user)
 
-        understanding = self._understand(query, router_result.topk)
+        understanding = self._understand(query, router_result.topk, decision.route_type)
         if understanding.needs_clarification:
             return Answer(
                 text="Could you be a bit more specific? I want to make sure I search the right area.",
                 citations=[],
                 route_type=decision.route_type,
-                grounded=True,
+                grounded=False,
             )
 
         return self._rag.run(understanding.search_terms, user, decision.route_type)
 
-    def _understand(self, query: str, candidates: list) -> QueryUnderstanding:
+    def _understand(
+        self,
+        query: str,
+        candidates: list,
+        decided_route: RouteType,
+    ) -> QueryUnderstanding:
         """Run the query-understanding LLM step behind its output contract.
 
         The LLM is prompted to emit JSON matching the contract; whatever it
@@ -146,6 +151,9 @@ class AskService:
         )
         raw = self._llm.complete(prompt, system="You output only valid JSON.")
         understanding = coerce_understanding(raw, fallback_query=query)
+        # The semantic router and routing engine are authoritative. The LLM
+        # rewrites retrieval terms but cannot silently reroute the request.
+        understanding = understanding.model_copy(update={"route_type": decided_route})
         self._tracer.event(
             "ask.understanding",
             route_type=understanding.route_type.value,

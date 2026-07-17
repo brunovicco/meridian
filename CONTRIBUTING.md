@@ -30,7 +30,7 @@ in `pyproject.toml`, resolved in `uv.lock` for a reproducible environment.
 ```bash
 make install   # uv sync --extra dev
 make demo      # verify the system works end to end
-make test      # 52 tests, all must pass
+make test      # all tests must pass
 ```
 
 Add a dependency with `uv add <package>` (or `uv add --optional <extra> <package>`

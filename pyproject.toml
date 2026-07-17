@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Reference architecture for an internal engineering knowledge platform: semantic router, DSPy-style output contracts, RAG with access control, on Redis Stack."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Bruno Vicco" }]
 dependencies = [
     "pydantic==2.13.4",
@@ -33,6 +33,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"meridian.data.catalog" = ["*.json"]
 
 # ---------------------------------------------------------------------------
 # Ruff: linting and formatting. A single tool for both keeps the toolchain

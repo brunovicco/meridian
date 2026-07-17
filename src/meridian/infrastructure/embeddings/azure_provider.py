@@ -86,6 +86,11 @@ class AzureEmbeddingProvider(EmbeddingProvider):
         """The configured deployment dimensionality."""
         return self._dimension
 
+    @property
+    def cache_identity(self) -> str:
+        """Identify the Azure deployment that produced cached vectors."""
+        return f"azure:{self._endpoint}:{self._deployment}:{self._api_version}:{self._dimension}"
+
     def embed_one(self, text: str) -> list[float]:
         """Embed a single string via the batch path."""
         vectors = self.embed_many([text])

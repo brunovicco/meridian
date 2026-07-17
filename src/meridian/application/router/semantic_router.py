@@ -17,9 +17,9 @@ Lifecycle:
 * ``route`` embeds a query, scores every intent, ranks them, and applies the
   three ambiguity rules.
 
-The fingerprint is a SHA-256 of the catalog, thresholds, and provider
-dimension. Any change to any of those changes the fingerprint and invalidates
-the cache automatically - there is no stale-cache failure mode.
+The fingerprint is a SHA-256 of the catalog, thresholds, provider identity, and
+dimension. Changing a model or deployment invalidates the cache even when the
+new vectors happen to have the same dimensionality.
 """
 
 import hashlib
@@ -67,16 +67,20 @@ class SemanticRouter:
         self._tracer = tracer
 
         self._intents: list[str] = sorted(positive_texts.keys())
+        if not self._intents:
+            raise ValueError("the route catalog must define at least one intent")
+        empty_intents = [intent for intent in self._intents if not positive_texts[intent]]
+        if empty_intents:
+            raise ValueError(f"route intents require positive examples: {', '.join(empty_intents)}")
         self._pos_matrices: dict[str, np.ndarray] = {}
         self._neg_matrices: dict[str, np.ndarray] = {}
         self._fingerprint = self._compute_fingerprint()
 
     def _compute_fingerprint(self) -> str:
-        """SHA-256 over catalog, thresholds, and embedding dimension.
+        """SHA-256 over catalog, thresholds, and embedding provider identity.
 
-        Any change to the catalog content, the thresholds, or the embedding
-        dimension yields a new fingerprint, which forces a rebuild rather than
-        serving stale matrices.
+        Any change to catalog content, thresholds, dimension, or provider/model
+        identity yields a new fingerprint and forces a rebuild.
         """
         payload = json.dumps(
             {
@@ -84,6 +88,7 @@ class SemanticRouter:
                 "negatives": self._negative_texts,
                 "thresholds": self._thresholds,
                 "dimension": self._embedder.dimension,
+                "embedding_provider": self._embedder.cache_identity,
             },
             sort_keys=True,
             ensure_ascii=False,

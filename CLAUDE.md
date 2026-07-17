@@ -34,10 +34,10 @@ The pieces that matter:
   ACL-scoped, injection-sanitised RediSearch expression over the service
   catalog. The structured counterpart to RAG: the pattern follows the shape of
   the data.
-- **Routing metrics** (`infrastructure/metrics/`) - in-process counters plus an
-  optional Redis HASH backend, driving fallback-rate degradation detection.
-- **Anaphora entity stack** (`application/services/entity_stack.py`) - a bounded
-  LIFO of discussed entities, JSON-serialisable for a Redis TTL cache.
+- **Routing metrics** (`infrastructure/metrics/`) - in-process degradation
+  counters plus buffered, explicitly flushed Redis HASH persistence.
+- **Anaphora entity stack** (`application/services/entity_stack.py`) - a
+  standalone bounded LIFO primitive for a future conversation adapter.
 - **Vector store** - two implementations (Redis Stack and in-memory) behind one
   interface.
 - **Catalog store** - two implementations (Redis Stack and in-memory) behind one

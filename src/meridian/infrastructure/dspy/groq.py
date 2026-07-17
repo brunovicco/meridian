@@ -37,9 +37,9 @@ def dspy_available() -> bool:
 
 def configure_groq_lm(
     *,
-    model: str | None = None,
+    model: str,
     api_key: str | None = None,
-    api_base: str | None = None,
+    api_base: str,
 ) -> bool:
     """Configure DSPy to use Groq as its language model.
 
@@ -51,9 +51,9 @@ def configure_groq_lm(
     The call is a no-op returning ``False`` if ``dspy`` is missing or no key is
     present, so the caller can fall back gracefully.
 
-    :param model: Groq model name; defaults to ``$GROQ_MODEL`` or a sane default.
+    :param model: Groq model name from application settings.
     :param api_key: Groq API key; defaults to ``$GROQ_API_KEY``.
-    :param api_base: API base URL; defaults to the Groq endpoint.
+    :param api_base: API base URL from application settings.
     :returns: ``True`` if DSPy was configured with Groq, ``False`` otherwise.
     """
     if not _DSPY_AVAILABLE:
@@ -63,10 +63,7 @@ def configure_groq_lm(
     if not key:
         return False
 
-    model_name = model or os.getenv("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
-    base = api_base or os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-
-    lm = dspy.LM(model_name, api_key=key, api_base=base)  # pragma: no cover - network
+    lm = dspy.LM(model, api_key=key, api_base=api_base)  # pragma: no cover - network
     dspy.configure(lm=lm)  # pragma: no cover - network
     return True
 
@@ -104,7 +101,7 @@ def grounding_reward(arguments: dict[str, Any], prediction: Any) -> float:
     declined = "not found" in answer.lower() or "could not find" in answer.lower()
 
     non_empty = bool(answer)
-    cites_or_declines = bool(_SOURCE_MENTION.search(context)) or declined or "http" in answer
+    cites_or_declines = bool(_SOURCE_MENTION.search(answer)) or declined or "http" in answer
     no_unsupported_hedge = not bool(_HEDGE_WITHOUT_CONTEXT.search(answer))
 
     context_words = {w.lower() for w in re.findall(r"\w{5,}", context)}

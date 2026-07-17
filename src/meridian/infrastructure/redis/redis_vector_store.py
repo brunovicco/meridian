@@ -60,7 +60,7 @@ class RedisVectorStore(VectorStore):
         dimension: int,
         tracer: Tracer,
         namespace: str = "meridian",
-        index_name: str = "idx:chunks",
+        index_name: str | None = None,
     ) -> None:
         """Connect to Redis and ensure the search index exists.
 
@@ -79,9 +79,12 @@ class RedisVectorStore(VectorStore):
         self._client = redis.Redis.from_url(url, decode_responses=False)
         self._dimension = dimension
         self._tracer = tracer
-        self._namespace = namespace
-        self._index_name = index_name
-        self._slim_index_name = "idx:slim"
+        # Dimension-version both keys and the default index name. Switching
+        # embedding dimensions therefore cannot reuse hashes or a RediSearch
+        # schema created for incompatible vectors.
+        self._namespace = f"{namespace}:d{dimension}"
+        self._index_name = index_name or f"idx:{namespace}:chunks:d{dimension}"
+        self._slim_index_name = f"{self._index_name}:slim"
         self._ensure_index()
         self._ensure_slim_index()
 
@@ -227,7 +230,10 @@ class RedisVectorStore(VectorStore):
         if not user.acl_groups:
             return []
 
-        group_filter = "|".join(user.acl_groups)
+        try:
+            group_filter = "|".join(_escape_tag_value(group) for group in user.acl_groups)
+        except ValueError:
+            return []
         base = f"(@acl_groups:{{{group_filter}}})"
         query = (
             Query(f"{base}=>[KNN {top_k} @embedding $vec AS score]")
@@ -301,7 +307,10 @@ class RedisVectorStore(VectorStore):
         if not user.acl_groups:
             return []
 
-        group_filter = "|".join(user.acl_groups)
+        try:
+            group_filter = "|".join(_escape_tag_value(group) for group in user.acl_groups)
+        except ValueError:
+            return []
         base = f"(@acl_groups:{{{group_filter}}})"
         query = (
             Query(f"{base}=>[KNN {top_k} @embedding $vec AS score]")
@@ -351,3 +360,16 @@ class RedisVectorStore(VectorStore):
 def _decode(value: object) -> str:
     """Decode a possibly-bytes RediSearch field to a string."""
     return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _escape_tag_value(value: str) -> str:
+    """Escape an ACL group for safe use inside a RediSearch TAG clause.
+
+    Query delimiters and every other non-alphanumeric character are escaped.
+    Empty values and control characters fail closed because they cannot
+    represent a trustworthy directory group.
+    """
+    cleaned = value.strip()
+    if not cleaned or any(ord(character) < 32 for character in cleaned):
+        raise ValueError("ACL group contains an invalid character")
+    return "".join(character if character.isalnum() else f"\\{character}" for character in cleaned)

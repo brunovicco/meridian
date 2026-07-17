@@ -13,18 +13,18 @@ here - the answer is derived from structured data, not generated.
 """
 
 from meridian.application.query.builder import ServiceQueryBuilder
-from meridian.application.query.sanitizer import sanitize_search_query
+from meridian.application.query.sanitizer import NO_MATCH_QUERY, sanitize_search_query
 from meridian.domain.interfaces import CatalogStore, Tracer
-from meridian.domain.models import Answer, RouteType, UserContext
+from meridian.domain.models import Answer, Citation, RouteType, UserContext
 from meridian.domain.models.service_catalog import StructuredQueryResult
 from meridian.domain.models.service_filter import ServiceFilterModel
 
 # Small keyword tables to turn a natural-language catalog question into a typed
 # filter. In production this extraction is the LLM's structured-output step
 # behind a contract; here it's deterministic so the demo needs no model.
-_TEAM_KEYWORDS = {"platform", "payments", "notifications", "fraud", "sre", "security"}
-_DOMAIN_KEYWORDS = {"payments", "notifications", "fraud", "gateway", "identity"}
-_TIER_KEYWORDS = {"tier1", "tier-1", "tier 1", "tier2", "tier-2", "tier 2"}
+_TEAM_KEYWORDS = ("platform", "payments", "notifications", "fraud", "sre", "security")
+_DOMAIN_KEYWORDS = ("payments", "notifications", "fraud", "gateway", "identity")
+_CATALOG_CITATION = Citation(source="Service Catalog", source_url="meridian://service-catalog")
 
 
 class StructuredQueryPipeline:
@@ -36,16 +36,19 @@ class StructuredQueryPipeline:
         builder: ServiceQueryBuilder,
         store: CatalogStore,
         tracer: Tracer,
+        result_limit: int = 250,
     ) -> None:
         """Wire the pipeline to the builder and the catalog store.
 
         :param builder: The RediSearch query builder.
         :param store: The catalog store to execute against.
         :param tracer: Structured observability sink.
+        :param result_limit: Safety bound for one catalog response.
         """
         self._builder = builder
         self._store = store
         self._tracer = tracer
+        self._result_limit = result_limit
 
     def run(self, question: str, user: UserContext) -> Answer:
         """Answer a structured catalog question for a user.
@@ -69,14 +72,16 @@ class StructuredQueryPipeline:
         # The builder produces a structured expression; the sanitiser is a final
         # guard on the whole string before it reaches the store.
         safe = sanitize_search_query(compiled)
-        services = self._store.execute(safe)
+        fetched = [] if safe == NO_MATCH_QUERY else self._store.execute(safe, limit=self._result_limit + 1)
+        truncated = len(fetched) > self._result_limit
+        services = fetched[: self._result_limit]
         self._tracer.event(
             "structured.query",
             question=question[:120],
             compiled=safe[:160],
             matched=len(services),
         )
-        return StructuredQueryResult(services=services, compiled_query=safe)
+        return StructuredQueryResult(services=services, compiled_query=safe, truncated=truncated)
 
     def _extract_filters(self, question: str) -> ServiceFilterModel:
         """Derive a typed filter from the question via keyword heuristics."""
@@ -108,7 +113,7 @@ class StructuredQueryPipeline:
         if not result.services:
             return Answer(
                 text="No services in the catalog match that, within what you can see.",
-                citations=[],
+                citations=[_CATALOG_CITATION.model_copy()],
                 route_type=RouteType.STRUCTURED_QUERY,
                 grounded=True,
             )
@@ -117,10 +122,14 @@ class StructuredQueryPipeline:
             f"{s.name} - team {s.team}, domain {s.domain}, {s.tier}, {s.dependencies} dependencies"
             for s in result.services
         ]
-        header = f"{len(result.services)} service(s) matched:"
+        header = (
+            f"Showing the first {len(result.services)} matching service(s):"
+            if result.truncated
+            else f"{len(result.services)} service(s) matched:"
+        )
         return Answer(
             text=header + "\n" + "\n".join(lines),
-            citations=[],
+            citations=[_CATALOG_CITATION.model_copy()],
             route_type=RouteType.STRUCTURED_QUERY,
             grounded=True,
         )

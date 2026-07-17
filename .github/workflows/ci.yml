@@ -32,8 +32,15 @@ jobs:
       - name: Lint
         run: make lint
 
+      - name: Format check
+        run: make format-check
+
       - name: Type check
         run: make typecheck
 
       - name: Test
         run: make test
+
+      - name: Build distribution
+        if: matrix.python-version == '3.12'
+        run: uv build

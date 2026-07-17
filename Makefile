@@ -1,6 +1,6 @@
 # Common developer tasks. Run `make help` for the list.
 
-.PHONY: help install demo acl-demo test lint format typecheck redis-up redis-down check
+.PHONY: help install demo acl-demo test lint format format-check typecheck redis-up redis-down check
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -30,10 +30,13 @@ lint:  ## Lint with ruff
 format:  ## Format with ruff
 	uv run ruff format src tests
 
+format-check:  ## Verify formatting without changing files
+	uv run ruff format --check src tests
+
 typecheck:  ## Type-check with mypy
 	uv run mypy
 
-check: lint typecheck test  ## Run lint, typecheck, and tests
+check: format-check lint typecheck test  ## Run format, lint, typecheck, and tests
 
 redis-up:  ## Start Redis Stack via Docker Compose
 	docker compose up -d

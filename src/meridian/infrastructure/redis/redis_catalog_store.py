@@ -34,7 +34,7 @@ class RedisCatalogStore(CatalogStore):
         url: str,
         tracer: Tracer,
         namespace: str = "meridian",
-        index_name: str = "idx:services",
+        index_name: str | None = None,
     ) -> None:
         """Connect to Redis and ensure the catalog index exists.
 
@@ -49,7 +49,7 @@ class RedisCatalogStore(CatalogStore):
         self._client = redis.Redis.from_url(url, decode_responses=True)
         self._tracer = tracer
         self._namespace = namespace
-        self._index_name = index_name
+        self._index_name = index_name or f"idx:{namespace}:services"
         self._ensure_index()
 
     def _ensure_index(self) -> None:
@@ -99,6 +99,9 @@ class RedisCatalogStore(CatalogStore):
 
     def execute(self, compiled_query: str, *, limit: int = 25) -> list[ServiceRecord]:
         """Run the compiled expression against the RediSearch index."""
+        if not compiled_query.startswith("@visibility:{"):
+            self._tracer.event("redis.catalog.rejected_unscoped_query")
+            return []
         query = Query(compiled_query).paging(0, limit).dialect(2)
         results = self._client.ft(self._index_name).search(query)
         records = [

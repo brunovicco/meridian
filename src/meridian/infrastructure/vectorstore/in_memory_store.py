@@ -31,13 +31,11 @@ class InMemoryVectorStore(VectorStore):
         """
         self._tracer = tracer
         self._routes: dict[str, tuple[dict[str, list[list[float]]], dict[str, list[list[float]]]]] = {}
-        self._chunks: list[KnowledgeChunk] = []
-        self._vectors: list[np.ndarray] = []
+        self._chunks: dict[str, tuple[KnowledgeChunk, np.ndarray]] = {}
         # Fat/slim state: slim projections are searched; fat bodies are fetched
         # by id on demand. They are kept in separate structures to mirror the
         # Redis layout (an indexed hash for slim, a JSON document for fat).
-        self._slim: list[SlimChunk] = []
-        self._slim_vectors: list[np.ndarray] = []
+        self._slim: dict[str, tuple[SlimChunk, np.ndarray]] = {}
         self._fat_by_id: dict[str, FatChunk] = {}
 
     def save_route_matrices(
@@ -59,10 +57,9 @@ class InMemoryVectorStore(VectorStore):
         return hit
 
     def upsert_chunks(self, chunks: list[KnowledgeChunk], vectors: list[list[float]]) -> None:
-        """Append chunks and their vectors to the in-memory index."""
+        """Insert or replace chunks and vectors by stable chunk id."""
         for chunk, vector in zip(chunks, vectors, strict=True):
-            self._chunks.append(chunk)
-            self._vectors.append(np.asarray(vector, dtype=np.float32))
+            self._chunks[chunk.chunk_id] = (chunk, np.asarray(vector, dtype=np.float32))
         self._tracer.event("memory.chunks.upserted", count=len(chunks), total=len(self._chunks))
 
     def search_chunks(self, query_vector: list[float], user: UserContext, top_k: int) -> list[KnowledgeChunk]:
@@ -78,7 +75,7 @@ class InMemoryVectorStore(VectorStore):
         allowed = set(user.acl_groups)
         query = np.asarray(query_vector, dtype=np.float32)
         scored: list[tuple[float, KnowledgeChunk]] = []
-        for chunk, vector in zip(self._chunks, self._vectors, strict=True):
+        for chunk, vector in self._chunks.values():
             if not allowed.intersection(chunk.acl_groups):
                 continue
             similarity = float(np.dot(vector, query))
@@ -94,8 +91,7 @@ class InMemoryVectorStore(VectorStore):
         """Store fat bodies by id and index their slim projections for search."""
         for fat, vector in zip(fats, vectors, strict=True):
             self._fat_by_id[fat.chunk_id] = fat
-            self._slim.append(fat.to_slim())
-            self._slim_vectors.append(np.asarray(vector, dtype=np.float32))
+            self._slim[fat.chunk_id] = (fat.to_slim(), np.asarray(vector, dtype=np.float32))
         self._tracer.event("memory.fat.upserted", count=len(fats), total=len(self._slim))
 
     def search_slim(self, query_vector: list[float], user: UserContext, top_k: int) -> list[SlimChunk]:
@@ -110,7 +106,7 @@ class InMemoryVectorStore(VectorStore):
         allowed = set(user.acl_groups)
         query = np.asarray(query_vector, dtype=np.float32)
         scored: list[tuple[float, SlimChunk]] = []
-        for slim, vector in zip(self._slim, self._slim_vectors, strict=True):
+        for slim, vector in self._slim.values():
             if not allowed.intersection(slim.acl_groups):
                 continue
             similarity = float(np.dot(vector, query))

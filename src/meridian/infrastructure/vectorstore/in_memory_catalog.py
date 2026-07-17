@@ -32,11 +32,12 @@ class InMemoryCatalogStore(CatalogStore):
         :param tracer: Structured observability sink.
         """
         self._tracer = tracer
-        self._services: list[ServiceRecord] = []
+        self._services: dict[str, ServiceRecord] = {}
 
     def upsert_services(self, services: list[ServiceRecord]) -> None:
-        """Append service records to the in-memory catalog."""
-        self._services.extend(services)
+        """Insert or replace service records by their stable id."""
+        for service in services:
+            self._services[service.service_id] = service
         self._tracer.event("memory.catalog.upserted", count=len(services), total=len(self._services))
 
     def execute(self, compiled_query: str, *, limit: int = 25) -> list[ServiceRecord]:
@@ -46,18 +47,19 @@ class InMemoryCatalogStore(CatalogStore):
         except the visibility clause, whose pipe-separated groups are ORed. A
         record matches only if it satisfies all clauses.
         """
-        matches = [s for s in self._services if self._matches(s, compiled_query)]
+        matches = [s for s in self._services.values() if self._matches(s, compiled_query)]
         self._tracer.event("memory.catalog.executed", query=compiled_query[:120], matched=len(matches))
         return matches[:limit]
 
     def _matches(self, service: ServiceRecord, query: str) -> bool:
         """Return whether a record satisfies every clause in the query."""
         # Visibility clause (OR over groups).
-        vis = _TAG_CLAUSE.search(query.split(" ", 1)[0]) if query.startswith("@visibility:") else None
-        if vis:
-            groups = [self._unescape(g) for g in vis.group(2).split("|")]
-            if not set(groups).intersection(service.visibility):
-                return False
+        vis = _TAG_CLAUSE.match(query)
+        if vis is None or vis.group(1) != "visibility":
+            return False
+        groups = [self._unescape(g) for g in vis.group(2).split("|")]
+        if not set(groups).intersection(service.visibility):
+            return False
 
         # Remaining tag clauses (exact match), skipping the visibility one.
         for field_name, raw_value in _TAG_CLAUSE.findall(query):

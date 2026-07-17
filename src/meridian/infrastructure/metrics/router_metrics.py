@@ -2,10 +2,9 @@
 
 Implements the "observability before optimisation" principle for the router. The
 collector keeps fast in-process counters for hot-path threshold checks (is the
-fallback rate alarming?) and optionally delegates to a durable backend for
-multi-worker aggregation. The Redis backend uses a single HASH with ``HINCRBY``
-and a rolling TTL, which aggregates correctly across Gunicorn/uvicorn workers -
-each worker's counters land in the same HASH.
+fallback rate alarming?) and can buffer deltas for a durable backend. An
+out-of-band caller invokes :meth:`RouterMetricsCollector.flush` so network I/O
+never enters the request path.
 
 The collector detects model degradation the way the production system does: if
 the share of routing decisions that fell back to the generic route exceeds a
@@ -23,7 +22,7 @@ from typing import Any, Protocol, runtime_checkable
 FALLBACK_RATE_ALARM_THRESHOLD = 0.25
 
 _REDIS_METRICS_KEY = "metrics:router"
-_REDIS_METRICS_TTL_SECONDS = 86_400  # 24h rolling window
+_REDIS_METRICS_TTL_SECONDS = 86_400  # expire after 24h without writes
 
 
 @runtime_checkable
@@ -48,7 +47,7 @@ class RedisMetricsBackend:
 
     A single HASH key holds every counter as a field, so aggregation across
     workers is correct without coordination. The TTL is renewed on every write,
-    giving a rolling 24-hour window that cleans itself up.
+    expiring the aggregate after 24 hours without metrics activity.
 
     Example HASH contents::
 
@@ -65,7 +64,7 @@ class RedisMetricsBackend:
         self._key = key
 
     def increment(self, field_name: str, amount: int = 1) -> None:
-        """Increment a HASH field and renew the rolling TTL."""
+        """Increment a HASH field and renew the inactivity TTL."""
         try:
             pipe = self._client.pipeline()
             pipe.hincrby(self._key, field_name, amount)
@@ -110,6 +109,7 @@ class RouterMetricsCollector:
     total_requests: int = 0
 
     _backend: MetricsBackend | None = field(default=None, init=False, repr=False)
+    _pending_backend: Counter[str] = field(default_factory=Counter, init=False, repr=False)
 
     def configure_backend(self, backend: MetricsBackend) -> None:
         """Register a durable backend for multi-worker aggregation.
@@ -125,39 +125,55 @@ class RouterMetricsCollector:
         route: str,
         *,
         was_fallback: bool = False,
-        anaphora_resolved: bool = False,
+        anaphora_resolved: bool | None = None,
         coercion_applied: bool = False,
     ) -> None:
         """Record one routing decision.
 
         Updates in-process counters synchronously and mirrors them to the
-        durable backend when configured. Emits nothing on the hot path beyond a
-        counter bump.
+        pending durable deltas when configured. Emits no network I/O on the hot
+        path beyond in-memory counter updates.
 
         :param route: The route that was chosen.
         :param was_fallback: Whether the decision was a fallback.
-        :param anaphora_resolved: Whether anaphora resolution fired.
+        :param anaphora_resolved: Resolution result, or ``None`` when no attempt occurred.
         :param coercion_applied: Whether output coercion had to repair drift.
         """
         self.total_requests += 1
         self.route_counter[route] += 1
         if was_fallback:
             self.fallback_counter[route] += 1
-        if anaphora_resolved:
+        if anaphora_resolved is True:
             self.anaphora_hits += 1
-        else:
+        elif anaphora_resolved is False:
             self.anaphora_misses += 1
         if coercion_applied:
             self.coercion_fallbacks += 1
 
         if self._backend is not None:
-            self._backend.increment(f"route:{route}")
-            self._backend.increment("total_requests")
+            self._pending_backend[f"route:{route}"] += 1
+            self._pending_backend["total_requests"] += 1
             if was_fallback:
-                self._backend.increment(f"fallback:{route}")
-            self._backend.increment("anaphora_hits" if anaphora_resolved else "anaphora_misses")
+                self._pending_backend[f"fallback:{route}"] += 1
+            if anaphora_resolved is not None:
+                field = "anaphora_hits" if anaphora_resolved else "anaphora_misses"
+                self._pending_backend[field] += 1
             if coercion_applied:
-                self._backend.increment("coercion_fallbacks")
+                self._pending_backend["coercion_fallbacks"] += 1
+
+    def flush(self) -> None:
+        """Persist buffered counter deltas outside the request path.
+
+        A scheduler or shutdown hook may call this method. Backend failures are
+        swallowed by the backend implementation and the next request remains
+        independent of metrics availability.
+        """
+        if self._backend is None or not self._pending_backend:
+            return
+        pending = dict(self._pending_backend)
+        self._pending_backend.clear()
+        for field_name, amount in pending.items():
+            self._backend.increment(field_name, amount)
 
     def fallback_rate(self) -> float:
         """Return the current fallback rate from in-process counters (0.0-1.0)."""
@@ -186,6 +202,7 @@ class RouterMetricsCollector:
             "fallback_by_route": dict(self.fallback_counter),
             "anaphora_hit_rate": hit_rate,
             "coercion_fallbacks": self.coercion_fallbacks,
+            "pending_backend_updates": sum(self._pending_backend.values()),
             "backend": type(self._backend).__name__ if self._backend else "in_process",
         }
 
@@ -197,3 +214,6 @@ class RouterMetricsCollector:
         self.anaphora_misses = 0
         self.coercion_fallbacks = 0
         self.total_requests = 0
+        self._pending_backend.clear()
+        if self._backend is not None:
+            self._backend.reset()

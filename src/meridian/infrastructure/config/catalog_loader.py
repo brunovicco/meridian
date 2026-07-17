@@ -1,21 +1,27 @@
 """Loaders for the intent catalog and the seed knowledge base.
 
-These helpers read the JSON files under ``data/catalog`` into the shapes the
-router and the vector store expect. Keeping the catalog as versioned data -
-rather than hard-coded in Python - means adding an intent or a document is an
-edit to a JSON file, and the router's fingerprint mechanism notices the change
-automatically and rebuilds.
+These helpers read packaged JSON resources into the shapes the router and the
+vector store expect. Keeping the catalog as versioned data rather than
+hard-coded Python means the CLI also works from an installed wheel.
 """
 
 import json
-from pathlib import Path
+from typing import Protocol
 
 from meridian.domain.models import KnowledgeChunk
 from meridian.domain.models.knowledge import FatChunk
 from meridian.domain.models.service_catalog import ServiceRecord
 
 
-def load_catalog(path: Path) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+class TextResource(Protocol):
+    """Minimal path/resource contract required by the JSON loaders."""
+
+    def read_text(self, encoding: str | None = None) -> str:
+        """Return the resource contents as text."""
+        ...
+
+
+def load_catalog(path: TextResource) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """Load per-intent positive and negative example phrases.
 
     :param path: Path to ``routes_catalog.json``.
@@ -28,7 +34,7 @@ def load_catalog(path: Path) -> tuple[dict[str, list[str]], dict[str, list[str]]
     return positives, negatives
 
 
-def load_knowledge_base(path: Path) -> list[KnowledgeChunk]:
+def load_knowledge_base(path: TextResource) -> list[KnowledgeChunk]:
     """Load the seed knowledge chunks.
 
     :param path: Path to ``knowledge_base.json``.
@@ -38,7 +44,7 @@ def load_knowledge_base(path: Path) -> list[KnowledgeChunk]:
     return [KnowledgeChunk(**raw) for raw in data.get("chunks", [])]
 
 
-def load_service_catalog(path: Path) -> list[ServiceRecord]:
+def load_service_catalog(path: TextResource) -> list[ServiceRecord]:
     """Load the seed service catalog records.
 
     :param path: Path to ``service_catalog.json``.
@@ -48,7 +54,7 @@ def load_service_catalog(path: Path) -> list[ServiceRecord]:
     return [ServiceRecord(**raw) for raw in data.get("services", [])]
 
 
-def load_fat_knowledge_base(path: Path) -> list[FatChunk]:
+def load_fat_knowledge_base(path: TextResource) -> list[FatChunk]:
     """Load the seed fat knowledge documents.
 
     :param path: Path to ``knowledge_base_fat.json``.

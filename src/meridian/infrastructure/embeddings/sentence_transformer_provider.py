@@ -13,12 +13,9 @@ fixes the vector dimensionality (384 for the default MiniLM model) rather than
 letting it be configured per deployment.
 """
 
-import os
 from typing import Any
 
 from meridian.domain.interfaces import EmbeddingProvider
-
-_DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
@@ -31,15 +28,15 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
     settings, not inferred from the provider.
     """
 
-    def __init__(self, *, model_name: str | None = None) -> None:
-        """Load the model, preferring the explicit argument over the environment.
+    def __init__(self, *, model_name: str) -> None:
+        """Load the configured local model.
 
         :param model_name: A `sentence-transformers` model id or local path.
         :raises RuntimeError: If the `sentence-transformers` package is not
             installed; the composition root catches this and falls back to the
             fake provider so the demo still runs with zero setup.
         """
-        self._model_name = model_name or os.getenv("MERIDIAN_ST_MODEL", _DEFAULT_MODEL)
+        self._model_name = model_name
         self._model = self._load_model()
 
     def _load_model(self) -> Any:
@@ -63,6 +60,11 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
     def dimension(self) -> int:
         """The model's native output dimensionality."""
         return int(self._model.get_sentence_embedding_dimension())
+
+    @property
+    def cache_identity(self) -> str:
+        """Identify the concrete sentence-transformers model and dimension."""
+        return f"sentence-transformers:{self._model_name}:{self.dimension}"
 
     def embed_one(self, text: str) -> list[float]:
         """Embed a single string via the batch path."""
