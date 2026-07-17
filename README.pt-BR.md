@@ -24,13 +24,13 @@ O projeto foi criado para demonstrar um conjunto específico de práticas de eng
 | **Contrato de saída de LLM** | `application/services/query_understanding.py` | Schema Pydantic + coerção que absorve desvios de formato (estilo DSPy) |
 | **RAG com controle de acesso** | `application/pipelines/rag_pipeline.py` | Filtro ACL em tempo de recuperação, citações obrigatórias, "não sei" honesto |
 | **Modelo fat/slim** | `domain/models/knowledge.py`, stores | Projeção slim para busca, documento fat buscado sob demanda via JSON.GET |
-| **DSPy (real) + Groq** | `infrastructure/dspy/` | `dspy.Predict` para roteamento + `dspy.Refine` com recompensa de fundamentação, no Groq; fallback fake por padrão |
+| **DSPy (real) + Groq** | `application/dspy_modules/`, `infrastructure/dspy/` | `dspy.Predict` para roteamento + `dspy.Refine` com recompensa de fundamentação, no Groq; fallback fake por padrão |
 | **Clean Architecture/SOLID** | toda a árvore | Dependências apontam para dentro; concretizações escolhidas apenas na composition root |
 | **Configuração twelve-factor** | `infrastructure/config/settings.py` | Todas as configurações via variáveis de ambiente |
 | **Vector store Redis Stack** | `infrastructure/redis/` | KNN com RediSearch e filtro ACL via metadados |
 | **Consulta estruturada (RediSearch)** | `application/query/` | Filtro tipado → `FT.SEARCH` compilado sobre o catálogo de serviços, escopo ACL, sanitizado contra injeção |
-| **Métricas de roteamento** | `infrastructure/metrics/` | Contadores Redis HASH (`HINCRBY` + TTL rolante) com detecção de degradação por taxa de fallback |
-| **Stack de entidades (anáfora)** | `application/services/entity_stack.py` | LIFO limitado de entidades discutidas, serializável em JSON para cache Redis com TTL |
+| **Métricas de roteamento** | `infrastructure/metrics/` | Detecção em processo mais persistência Redis HASH bufferizada |
+| **Stack de entidades (anáfora)** | `application/services/entity_stack.py` | Primitiva LIFO isolada, pronta para um futuro adaptador de conversação |
 | **Observabilidade** | `infrastructure/observability/` | Evento estruturado por decisão de roteamento e recuperação |
 
 ---
@@ -58,14 +58,14 @@ O projeto foi criado para demonstrar um conjunto específico de práticas de eng
 
 Dois pipelines rodam em momentos distintos e o código os mantém separados:
 
-- **Ingestão (offline):** documentos são fragmentados, embedados e indexados com seus metadados ACL. Aqui os dados vêm de `data/catalog/knowledge_base.json`.
+- **Ingestão (offline):** documentos são fragmentados, embedados e indexados com seus metadados ACL. Aqui os dados vêm dos recursos empacotados em `src/meridian/data/catalog/`.
 - **Consulta (online):** o fluxo acima.
 
 ---
 
 ## O roteador semântico, concretamente
 
-Cada intenção é definida por frases **positivas** (como ela se parece) e frases **negativas** (confusíveis de outras intenções). Na construção, essas frases são embedadas em matrizes por intenção e cacheadas no vector store sob um **fingerprint SHA-256** do catálogo, dos thresholds e da dimensão do embedding - mude qualquer um desses e o cache invalida automaticamente.
+Cada intenção é definida por frases **positivas** (como ela se parece) e frases **negativas** (confusíveis de outras intenções). Na construção, essas frases são embedadas em matrizes por intenção e cacheadas no vector store sob um **fingerprint SHA-256** do catálogo, dos thresholds, da dimensão e da identidade do modelo/provider - mudar qualquer um deles invalida o cache automaticamente.
 
 Para um vetor de consulta `q`, cada intenção recebe uma pontuação:
 
@@ -109,7 +109,7 @@ Carol (security) vê o post-mortem restrito; Alice (payments/platform) nunca o v
 
 ## Conhecimento estruturado é um problema de consulta, não de recuperação
 
-Nem todo conhecimento é prosa não estruturada. "Quem é dono do serviço de pagamentos" ou "quais serviços tier-1 não têm dono" são perguntas sobre um **catálogo de serviços** - dados estruturados onde a resposta correta é completa, não um top-K amostrado. Jogar linhas do catálogo num contexto de LLM retorna uma fração; compilar a pergunta numa consulta retorna a resposta inteira. A rota `structured_query` faz isso.
+Nem todo conhecimento é prosa não estruturada. "Quem é dono do serviço de pagamentos" ou "quais serviços tier-1 não têm dono" são perguntas sobre um **catálogo de serviços**. A rota `structured_query` executa uma consulta limitada e informa explicitamente quando existem mais linhas além do limite configurado, em vez de retornar uma amostra semântica top-K.
 
 ```bash
 uv run python -m meridian.interfaces.cli.main --structured-demo
@@ -126,7 +126,7 @@ uv run python -m meridian.interfaces.cli.main --structured-demo
       - api-gateway (team platform, tier1)
 ```
 
-O `ServiceQueryBuilder` (`application/query/`) classifica cada campo de filtro como **TAG** (exato), **TEXT** (fuzzy com regras de tokenização) ou **NUMERIC** (intervalo) e compila uma expressão RediSearch. Duas propriedades são estruturais: a cláusula de visibilidade é sempre prefixada (nenhum chamador consegue construir uma consulta sem escopo) e o resultado passa por um **sanitizador** que rejeita verbos de agregação, entrada excessivamente longa e caracteres de controle, falhando de forma segura para um wildcard.
+O `ServiceQueryBuilder` (`application/query/`) classifica cada campo de filtro como **TAG** (exato), **TEXT** (fuzzy com regras de tokenização) ou **NUMERIC** (intervalo) e compila uma expressão RediSearch. Duas propriedades são estruturais: a cláusula de visibilidade é sempre prefixada e o resultado passa por um **sanitizador** que rejeita verbos de agregação, entrada excessivamente longa e caracteres de controle, falhando fechado para uma consulta impossível ainda escopada por ACL.
 
 ---
 
@@ -173,7 +173,7 @@ Crucialmente, **o provedor fake é o padrão**, e o backend Groq degrada para el
 
 ## Observando a saúde do roteador
 
-Cada decisão de roteamento é registrada por um coletor de métricas (`infrastructure/metrics/`). Contadores em processo alimentam uma verificação rápida de degradação - se uma parcela grande demais das decisões cai na rota genérica, o roteador pode estar driftando e precisa de recompilação. Um backend Redis espelha os contadores em um único HASH com `HINCRBY` e TTL rolante de 24 horas, que agrega corretamente entre workers. As métricas nunca quebram o caminho de requisição: falhas no backend são engolidas e a escrita durável fica fora do hot path.
+Cada decisão de roteamento é registrada por um coletor de métricas (`infrastructure/metrics/`). Contadores em processo alimentam uma verificação rápida de degradação. Um backend Redis opcional persiste deltas bufferizados em um HASH com `HINCRBY`; um scheduler ou hook de encerramento chama `flush()` fora do caminho de requisição. O TTL remove o agregado após 24 horas sem escritas, e falhas do backend nunca quebram requisições.
 
 ---
 
@@ -203,7 +203,7 @@ src/meridian/
   application/       # roteador, motor, pipelines RAG + estruturado, query builder, módulos dspy
   infrastructure/    # embeddings, vector/catalog stores, redis, llm (fake/azure/groq), métricas, dspy
   interfaces/        # composition root, CLI
-data/catalog/        # intenções + base de conhecimento fat + catálogo de serviços (dados versionados)
+  data/catalog/      # intenções + conhecimento + catálogo de serviços empacotados
 tests/               # unitários (peças puras) + integração (fluxos completos, incl. ACL, estruturado, fat/slim)
 ```
 
@@ -217,7 +217,7 @@ make demo        # demo end-to-end com script
 make acl-demo    # filtro de controle de acesso em isolamento
 make structured-demo  # consulta estruturada compilada para RediSearch
 make fatslim-demo     # divisão de recuperação fat/slim
-make test        # suite de testes (52 testes)
+make test        # suite de testes
 make check       # lint + typecheck + teste
 make redis-up    # iniciar Redis Stack
 ```

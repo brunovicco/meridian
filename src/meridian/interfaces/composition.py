@@ -46,25 +46,37 @@ def build_embedder(settings: Settings) -> EmbeddingProvider:
     if settings.embedding_backend == "azure":
         from meridian.infrastructure.embeddings.azure_provider import AzureEmbeddingProvider
 
-        return AzureEmbeddingProvider(dimension=settings.embedding_dimension)
+        return AzureEmbeddingProvider(
+            endpoint=settings.azure_openai_endpoint,
+            deployment=settings.azure_embedding_deployment,
+            api_version=settings.azure_api_version,
+            dimension=settings.embedding_dimension,
+            ca_cert_path=settings.corporate_ca_bundle,
+        )
     if settings.embedding_backend == "local":
         try:
             from meridian.infrastructure.embeddings.sentence_transformer_provider import (
                 SentenceTransformerEmbeddingProvider,
             )
 
-            return SentenceTransformerEmbeddingProvider()
+            return SentenceTransformerEmbeddingProvider(model_name=settings.sentence_transformer_model)
         except RuntimeError:
             # sentence-transformers missing: fall back so the demo still runs.
             return FakeEmbeddingProvider(dimension=settings.embedding_dimension)
     return FakeEmbeddingProvider(dimension=settings.embedding_dimension)
 
 
-def build_store(settings: Settings, tracer: Tracer) -> VectorStore:
+def build_store(
+    settings: Settings,
+    tracer: Tracer,
+    *,
+    embedding_dimension: int | None = None,
+) -> VectorStore:
     """Choose the vector store from configuration.
 
     :param settings: Application settings.
     :param tracer: Structured observability sink.
+    :param embedding_dimension: Actual provider dimension, when already known.
     :returns: A concrete :class:`VectorStore`.
     """
     if settings.backend == "redis":
@@ -72,7 +84,7 @@ def build_store(settings: Settings, tracer: Tracer) -> VectorStore:
 
         return RedisVectorStore(
             url=settings.redis_url,
-            dimension=settings.embedding_dimension,
+            dimension=embedding_dimension or settings.embedding_dimension,
             tracer=tracer,
         )
     return InMemoryVectorStore(tracer=tracer)
@@ -106,12 +118,20 @@ def build_llm(settings: Settings) -> LLMProvider:
     if settings.llm_backend == "azure":
         from meridian.infrastructure.llm.providers import AzureLLMProvider
 
-        return AzureLLMProvider()
+        return AzureLLMProvider(
+            endpoint=settings.azure_openai_endpoint,
+            deployment=settings.azure_chat_deployment,
+            api_version=settings.azure_api_version,
+        )
     if settings.llm_backend in ("groq", "dspy"):
         try:
             from meridian.infrastructure.llm.providers import GroqDSPyLLMProvider
 
-            return GroqDSPyLLMProvider()
+            return GroqDSPyLLMProvider(
+                model=settings.groq_model,
+                api_base=settings.groq_api_base,
+                artifact_path=settings.dspy_router_artifact,
+            )
         except RuntimeError:
             # dspy missing or GROQ_API_KEY absent: fall back so the demo still runs.
             return FakeLLMProvider()
@@ -137,7 +157,7 @@ def build_ask_service(
     """
     tracer: Tracer = StructuredTracer()
     embedder = build_embedder(settings)
-    store = build_store(settings, tracer)
+    store = build_store(settings, tracer, embedding_dimension=embedder.dimension)
     catalog = build_catalog_store(settings, tracer)
     llm = build_llm(settings)
     policy = RoutingPolicy.for_embedding_backend(settings.embedding_backend)
@@ -155,8 +175,20 @@ def build_ask_service(
     router.build()
 
     engine = RoutingEngine(policy=policy, tracer=tracer)
-    rag = RagPipeline(embedder=embedder, store=store, llm=llm, tracer=tracer, top_k=settings.top_k)
-    structured = StructuredQueryPipeline(builder=ServiceQueryBuilder(), store=catalog, tracer=tracer)
+    rag = RagPipeline(
+        embedder=embedder,
+        store=store,
+        llm=llm,
+        tracer=tracer,
+        top_k=settings.top_k,
+        max_context_chars=settings.max_context_chars,
+    )
+    structured = StructuredQueryPipeline(
+        builder=ServiceQueryBuilder(),
+        store=catalog,
+        tracer=tracer,
+        result_limit=settings.catalog_result_limit,
+    )
     service = AskService(
         router=router,
         engine=engine,

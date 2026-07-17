@@ -6,8 +6,12 @@ reward tests pin the grounding scorer that drives the DSPy Refine loop; they run
 without the ``dspy`` package because the reward function itself is pure Python.
 """
 
+from meridian.application.pipelines.rag_pipeline import RagPipeline
+from meridian.domain.models import RouteType, UserContext
 from meridian.domain.models.knowledge import FatChunk
 from meridian.infrastructure.dspy.groq import grounding_reward
+from meridian.infrastructure.embeddings.fake_provider import FakeEmbeddingProvider
+from meridian.infrastructure.llm.providers import FakeLLMProvider
 from meridian.infrastructure.observability.tracer import NullTracer
 from meridian.infrastructure.vectorstore.in_memory_store import InMemoryVectorStore
 
@@ -66,6 +70,42 @@ def test_search_slim_respects_acl() -> None:
     assert store.search_slim([1.0, 0.0], _user([]), 3) == []
 
 
+def test_upsert_replaces_stale_slim_acl_and_fat_body_together() -> None:
+    """Changing a document ACL cannot leave an older searchable projection."""
+    store = InMemoryVectorStore(tracer=NullTracer())
+    original = _fat("same", "payments content", ["payments"])
+    restricted = _fat("same", "security secret", ["security"])
+
+    store.upsert_fat_chunks([original], [[1.0, 0.0]])
+    store.upsert_fat_chunks([restricted], [[1.0, 0.0]])
+
+    assert store.search_slim([1.0, 0.0], _user(["payments"]), 3) == []
+    security_results = store.search_slim([1.0, 0.0], _user(["security"]), 3)
+    assert [result.chunk_id for result in security_results] == ["same"]
+    assert store.fetch_fat("same") == restricted
+
+
+def test_rag_enforces_actual_context_budget_after_fat_fetch() -> None:
+    """A large fat body is truncated to the configured generation budget."""
+    embedder = FakeEmbeddingProvider(dimension=16)
+    store = InMemoryVectorStore(tracer=NullTracer())
+    fat = _fat("large", "payments authentication " * 100, ["payments"])
+    store.upsert_fat_chunks([fat], embedder.embed_many([fat.text]))
+    pipeline = RagPipeline(
+        embedder=embedder,
+        store=store,
+        llm=FakeLLMProvider(),
+        tracer=NullTracer(),
+        top_k=1,
+        max_context_chars=120,
+    )
+
+    answer = pipeline.run("payments authentication", _user(["payments"]), RouteType.KNOWLEDGE_QA)
+
+    assert answer.grounded is True
+    assert len(answer.text) <= 120
+
+
 def test_reward_rewards_grounded_answer() -> None:
     """An answer overlapping its context scores highly."""
     context = "[Source: Runbook] The failover promotes the standby replica to primary."
@@ -85,8 +125,6 @@ def test_reward_accepts_honest_decline() -> None:
     assert score >= 0.5
 
 
-def _user(groups: list[str]):
+def _user(groups: list[str]) -> UserContext:
     """Build a user context for tests."""
-    from meridian.domain.models import UserContext
-
     return UserContext(user_id="u", acl_groups=groups)

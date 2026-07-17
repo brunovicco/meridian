@@ -46,6 +46,16 @@ class EmbeddingProvider(ABC):
         """The dimensionality of the vectors this provider produces."""
         raise NotImplementedError
 
+    @property
+    @abstractmethod
+    def cache_identity(self) -> str:
+        """Stable identity of the model and preprocessing used for vectors.
+
+        Cache keys must change when two providers can emit different vectors,
+        even when their dimensionality happens to be the same.
+        """
+        raise NotImplementedError
+
 
 class VectorStore(ABC):
     """Stores route embedding matrices and knowledge chunks, and searches them.
@@ -191,10 +201,10 @@ class RouterMetricsPort(Protocol):
         route: str,
         *,
         was_fallback: bool = False,
-        anaphora_resolved: bool = False,
+        anaphora_resolved: bool | None = None,
         coercion_applied: bool = False,
     ) -> None:
-        """Record one routing decision."""
+        """Record one routing decision and optional anaphora attempt."""
         ...
 
     def is_degraded(self) -> bool:

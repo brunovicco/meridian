@@ -37,8 +37,8 @@ of Python, Redis Stack, and pluggable embedding/LLM providers.
 | **Twelve-factor config** | `infrastructure/config/settings.py` | All settings from the environment |
 | **Redis Stack vector store** | `infrastructure/redis/` | RediSearch KNN with a metadata ACL filter |
 | **Structured query (RediSearch)** | `application/query/` | Typed filter → compiled `FT.SEARCH` over the service catalog, ACL-scoped, injection-sanitised |
-| **Routing metrics** | `infrastructure/metrics/` | Redis HASH counters (`HINCRBY` + rolling TTL) with fallback-rate degradation detection |
-| **Anaphora entity stack** | `application/services/entity_stack.py` | Bounded LIFO of discussed entities, JSON-serialisable for a Redis TTL cache |
+| **Routing metrics** | `infrastructure/metrics/` | In-process degradation counters plus buffered Redis HASH persistence |
+| **Anaphora entity stack** | `application/services/entity_stack.py` | Standalone bounded LIFO primitive, ready for a future conversation adapter |
 | **Observability** | `infrastructure/observability/` | Structured event per routing decision and retrieval |
 
 ---
@@ -67,7 +67,8 @@ of Python, Redis Stack, and pluggable embedding/LLM providers.
 Two pipelines run at different times, and the code keeps them separate:
 
 - **Ingestion (offline):** documents are chunked, embedded, and indexed with
-  their ACL metadata. Seeded here from `data/catalog/knowledge_base.json`.
+  their ACL metadata. Seeded from the packaged resources under
+  `src/meridian/data/catalog/`.
 - **Query (online):** the flow above.
 
 ---
@@ -77,8 +78,8 @@ Two pipelines run at different times, and the code keeps them separate:
 Each intent is defined by **positive** example phrases (what it looks like) and
 **negative** phrases (confusables from other intents). At build time these are
 embedded into per-intent matrices and cached in the vector store under a
-**SHA-256 fingerprint** of the catalog, thresholds, and embedding dimension -
-change any of those and the cache invalidates automatically.
+**SHA-256 fingerprint** of the catalog, thresholds, embedding dimension, and
+provider/model identity - change any of those and the cache invalidates.
 
 For a query vector `q`, each intent scores as:
 
@@ -133,9 +134,9 @@ never does; Dan (no groups) sees nothing - the filter fails closed.
 
 Not all knowledge is unstructured prose. "Who owns the payments service" or
 "which tier-1 services have no owner" are questions over a **service catalog** -
-structured data where the right answer is complete, not a top-K sample. Stuffing
-catalog rows into an LLM context returns a fraction; compiling the question into
-a query returns the whole answer. The `structured_query` route does the latter.
+structured data where the right answer should be query-driven, not a top-K
+semantic sample. The structured path executes a bounded catalog query and
+explicitly reports when more rows exist beyond the configured result limit.
 
 ```bash
 uv run python -m meridian.interfaces.cli.main --structured-demo
@@ -157,7 +158,8 @@ a **TAG** (exact), **TEXT** (fuzzy with tokenisation rules), or **NUMERIC**
 (range) and compiles a RediSearch expression. Two properties are structural: the
 visibility clause is always prepended (a caller cannot build an unscoped query),
 and the result passes an injection **sanitiser** that rejects aggregation verbs,
-over-length input, and control characters - failing safe to a wildcard. This is
+over-length input, and control characters - failing closed to an impossible
+ACL-scoped query. This is
 the same lesson, in code, that once turned a failing RAG-over-tabular-data
 approach into a text-to-query one: the pattern follows the shape of the data.
 
@@ -226,10 +228,10 @@ on the network - you turn Groq on deliberately, with the key in hand.
 Every routing decision is recorded by a metrics collector
 (`infrastructure/metrics/`). In-process counters drive a fast degradation check
 - if too large a share of decisions fall back to the generic route, the router
-may be drifting and needs recompilation. A Redis backend mirrors the counters
-into a single HASH with `HINCRBY` and a rolling 24-hour TTL, which aggregates
-correctly across workers. Metrics never break the request path: backend failures
-are swallowed, and the durable write is off the hot path.
+may be drifting and needs recompilation. An optional Redis backend persists
+buffered deltas into a single HASH with `HINCRBY`; a scheduler or shutdown hook
+calls `flush()` outside the request path. Its TTL expires the aggregate after 24
+hours without writes. Backend failures are swallowed and never break requests.
 
 ---
 
@@ -275,7 +277,7 @@ src/meridian/
   application/       # router, engine, RAG + structured pipelines, query builder, dspy modules
   infrastructure/    # embeddings, vector/catalog stores, redis, llm (fake/azure/groq), metrics
   interfaces/        # composition root, CLI
-data/catalog/        # intents + fat knowledge base + service catalog (versioned data)
+  data/catalog/      # packaged intents + knowledge + service catalog resources
 tests/               # unit (pure pieces) + integration (full flows, incl. ACL, structured, fat/slim)
 ```
 
@@ -289,7 +291,7 @@ make demo        # scripted end-to-end demo
 make acl-demo    # access-control filter in isolation
 make structured-demo  # structured query compiled to RediSearch
 make fatslim-demo     # fat/slim retrieval split
-make test        # test suite (52 tests)
+make test        # test suite
 make check       # lint + typecheck + test
 make redis-up    # start Redis Stack
 ```

@@ -41,3 +41,4 @@ class StructuredQueryResult(BaseModel):
 
     services: list[ServiceRecord] = Field(default_factory=list, description="Matched services.")
     compiled_query: str = Field(..., description="The RediSearch expression that was executed.")
+    truncated: bool = Field(default=False, description="Whether more matching rows exist beyond the limit.")

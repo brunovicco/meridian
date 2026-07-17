@@ -16,7 +16,7 @@ at ``redis`` to run the same code against Redis Stack.
 """
 
 import argparse
-from pathlib import Path
+from importlib.resources import files
 
 from meridian.application.services.ask_service import AskService
 from meridian.domain.interfaces import CatalogStore, EmbeddingProvider, VectorStore
@@ -29,7 +29,7 @@ from meridian.infrastructure.config.catalog_loader import (
 from meridian.infrastructure.config.settings import Settings
 from meridian.interfaces.composition import build_ask_service
 
-_DATA_DIR = Path(__file__).resolve().parents[4] / "data" / "catalog"
+_DATA_DIR = files("meridian.data.catalog")
 
 ServiceBundle = tuple[AskService, VectorStore, EmbeddingProvider, CatalogStore]
 
@@ -69,9 +69,9 @@ def _print_answer(user_id: str, question: str, answer: Answer) -> None:
 def run_demo(service: AskService, users: dict[str, UserContext]) -> None:
     """Run a scripted set of questions that exercise every route and ACL.
 
-    The last two questions make access control visible: Alice can read the
-    credential-rotation guide; Dan, with no groups, gets nothing for the same
-    question - the retrieval filter fails closed.
+    The last two questions make access control visible: Carol can read the
+    restricted security post-mortem; Alice cannot retrieve it and therefore
+    receives an honest insufficient-context answer.
     """
     script = [
         ("alice", "how do I configure authentication for the payments service"),
@@ -164,7 +164,13 @@ def main() -> None:
     """Parse arguments, compose the service, seed data, and answer."""
     parser = argparse.ArgumentParser(description="Meridian knowledge assistant (reference).")
     parser.add_argument("--ask", type=str, help="A single question to answer.")
-    parser.add_argument("--user", type=str, default="alice", help="Which demo user is asking.")
+    parser.add_argument(
+        "--user",
+        type=str,
+        choices=sorted(_USERS),
+        default="alice",
+        help="Which demo user is asking.",
+    )
     parser.add_argument("--demo", action="store_true", help="Run the scripted demo.")
     parser.add_argument("--acl-demo", action="store_true", help="Show the ACL retrieval filter.")
     parser.add_argument("--structured-demo", action="store_true", help="Show the structured query path.")
@@ -193,7 +199,7 @@ def main() -> None:
         run_demo(service, _USERS)
         return
 
-    user = _USERS.get(args.user, _USERS["alice"])
+    user = _USERS[args.user]
     answer = service.ask(args.ask, user)
     _print_answer(user.user_id, args.ask, answer)
 

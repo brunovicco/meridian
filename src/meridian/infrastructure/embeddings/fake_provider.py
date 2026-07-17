@@ -36,6 +36,11 @@ class FakeEmbeddingProvider(EmbeddingProvider):
         """The fixed output dimensionality."""
         return self._dimension
 
+    @property
+    def cache_identity(self) -> str:
+        """Identify the hashing algorithm and vector dimension."""
+        return f"fake-hashing-v1:{self._dimension}"
+
     def embed_one(self, text: str) -> list[float]:
         """Embed one string into a normalised vector.
 

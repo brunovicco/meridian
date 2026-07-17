@@ -12,8 +12,11 @@ composition root swaps between them via configuration - the same dependency
 inversion pattern as the embedding providers.
 """
 
+import ast
 import json
 import os
+import re
+from pathlib import Path
 
 from meridian.domain.interfaces import LLMProvider
 
@@ -46,7 +49,8 @@ class FakeLLMProvider(LLMProvider):
         different routes firing, then hands the raw question through as search
         terms. The coercion layer would repair this even if the shape drifted.
         """
-        lowered = prompt.lower()
+        question = prompt.split("Question:", 1)[-1].split("Router candidates:", 1)[0].strip()
+        lowered = question.lower()
         if any(word in lowered for word in ("who owns", "which team", "service catalog", "how many")):
             route = "structured_query"
         elif any(word in lowered for word in ("function", "class", "method", "code", "implement")):
@@ -54,7 +58,6 @@ class FakeLLMProvider(LLMProvider):
         else:
             route = "knowledge_qa"
 
-        question = prompt.split("Question:", 1)[-1].split("Router candidates:", 1)[0].strip()
         return json.dumps(
             {
                 "route_type": route,
@@ -72,13 +75,30 @@ class FakeLLMProvider(LLMProvider):
         """
         if "Context from the internal knowledge base:" not in prompt:
             return _INSUFFICIENT_MARKER
-        context = prompt.split("Context from the internal knowledge base:", 1)[1]
-        context = context.split("Question:", 1)[0]
-        lines = [ln.strip() for ln in context.splitlines() if ln.strip() and not ln.startswith("[Source:")]
-        if not lines:
+        content = prompt.split("Context from the internal knowledge base:", 1)[1]
+        context, _, question_block = content.partition("Question:")
+        question = question_block.split("Answer the question", 1)[0].strip()
+        bodies = [
+            block.split("]", 1)[-1].strip()
+            for block in context.split("[Source:")
+            if block.strip() and "]" in block
+        ]
+        if not bodies:
             return _INSUFFICIENT_MARKER
-        # Extractive: return the first couple of substantive lines as the answer.
-        return " ".join(lines[:2])
+        query_terms = set(re.findall(r"\w{4,}", question.lower()))
+
+        def relevance(body: str) -> int:
+            """Count query terms present in one candidate document."""
+            lowered = body.lower()
+            return sum(term in lowered for term in query_terms)
+
+        # Extract from the best matching document instead of concatenating
+        # unrelated top-k bodies into one misleading answer.
+        best = max(bodies, key=relevance)
+        coverage = relevance(best) / len(query_terms) if query_terms else 0.0
+        if coverage < 0.2:
+            return _INSUFFICIENT_MARKER
+        return best
 
 
 class AzureLLMProvider(LLMProvider):  # pragma: no cover - depends on external SDK
@@ -123,7 +143,7 @@ class GroqDSPyLLMProvider(LLMProvider):
     fake provider - the default demo therefore never depends on this path.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, model: str, api_base: str, artifact_path: str = "") -> None:
         """Configure Groq and build the DSPy modules, or fail for fallback."""
         from meridian.infrastructure.dspy.groq import (
             configure_groq_lm,
@@ -132,14 +152,20 @@ class GroqDSPyLLMProvider(LLMProvider):
 
         if not dspy_available():
             raise RuntimeError("dspy is not installed; cannot use the Groq/DSPy backend.")
-        if not configure_groq_lm():
+        if not configure_groq_lm(model=model, api_base=api_base):
             raise RuntimeError("GROQ_API_KEY not set; cannot configure Groq for DSPy.")
 
         # Imported here (not at module top) because the class is only defined
         # when dspy is installed, which the guard above has confirmed.
+        from meridian.application.dspy_modules.modules import DSPyRouterModule
         from meridian.infrastructure.dspy.groq import DSPyRefineModule
+        from meridian.infrastructure.dspy.loader import load_compiled_program
 
         self._refine = DSPyRefineModule()
+        self._router = DSPyRouterModule()
+        artifact = artifact_path.strip()
+        if artifact:
+            load_compiled_program(self._router, Path(artifact))
 
     def complete(self, prompt: str, *, system: str | None = None) -> str:  # pragma: no cover - network
         """Answer via the DSPy Refine loop when a context block is present.
@@ -154,6 +180,21 @@ class GroqDSPyLLMProvider(LLMProvider):
             context = prompt.split(marker, 1)[1].split("Question:", 1)[0].strip()
             question = prompt.split("Question:", 1)[1].split("Answer the question", 1)[0].strip()
             return self._refine(context=context, question=question)
+
+        if "Question:" in prompt and "Router candidates:" in prompt:
+            question = prompt.split("Question:", 1)[1].split("Router candidates:", 1)[0].strip()
+            raw_candidates = prompt.split("Router candidates:", 1)[1].strip()
+            try:
+                parsed_candidates = ast.literal_eval(raw_candidates)
+            except (SyntaxError, ValueError):
+                parsed_candidates = []
+            candidates = (
+                [str(candidate) for candidate in parsed_candidates]
+                if isinstance(parsed_candidates, list)
+                else []
+            )
+            understanding = self._router(question=question, candidate_intents=candidates)
+            return understanding.model_dump_json()
 
         import dspy
 
