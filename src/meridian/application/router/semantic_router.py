@@ -138,6 +138,21 @@ class SemanticRouter:
     def route(self, query: str, *, k: int = 3) -> RouterResult:
         """Score every intent for ``query`` and return a ranked, judged result.
 
+        Ties (equal scores, which happen with near-duplicate catalog phrases or
+        degenerate zero vectors) are broken by the intent's own confidence
+        threshold, descending: the intent that demands more evidence to win
+        signals a more specific, better-calibrated match, so it takes
+        precedence over a laxer intent with the same raw score. Intents whose
+        thresholds also tie fall back to intent name, ascending, so the order
+        is always deterministic. This is an explicit sort key rather than an
+        accident of dict order: without it, tie-break behaviour would depend on
+        Python's sort stability plus whatever order intents happen to be built
+        in, which is exactly the kind of hidden coupling that breaks silently
+        on refactor. A tied ``best_intent`` still surfaces to the caller (trace
+        events, the disambiguation prompt in :class:`AskService`, and per-route
+        metrics), so the choice must be deterministic even though score ties
+        are almost always also flagged ambiguous by rule 3 below.
+
         :param query: The user's natural-language message.
         :param k: How many top candidates to include in ``topk``.
         :returns: A :class:`RouterResult` with scores and an ambiguity verdict.
@@ -157,7 +172,7 @@ class SemanticRouter:
             )
             for intent in self._intents
         ]
-        scored.sort(key=lambda s: s.score, reverse=True)
+        scored.sort(key=lambda s: (-s.score, -self._threshold_for(s.intent), s.intent))
         topk = scored[: max(1, k)]
 
         ambiguous, rule = self._detect_ambiguity(topk)
@@ -180,6 +195,14 @@ class SemanticRouter:
         )
         return result
 
+    def _threshold_for(self, intent: str) -> float:
+        """Return the calibrated confidence threshold for ``intent``.
+
+        Falls back to the config default for intents absent from the
+        per-intent threshold map.
+        """
+        return self._thresholds.get(intent, self._config.default_intent_threshold)
+
     def _detect_ambiguity(self, topk: list[ScoredIntent]) -> tuple[bool, str]:
         """Apply the three ambiguity rules in order.
 
@@ -188,7 +211,7 @@ class SemanticRouter:
         is recorded in the trace for auditability.
         """
         best = topk[0]
-        threshold = self._thresholds.get(best.intent, self._config.default_intent_threshold)
+        threshold = self._threshold_for(best.intent)
         runner_up = topk[1] if len(topk) > 1 else None
         gap = (best.score - runner_up.score) if runner_up else float("inf")
 
