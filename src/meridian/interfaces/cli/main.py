@@ -24,6 +24,7 @@ from meridian.domain.models import Answer, UserContext
 from meridian.infrastructure.config.catalog_loader import (
     load_catalog,
     load_fat_knowledge_base,
+    load_knowledge_base,
     load_service_catalog,
 )
 from meridian.infrastructure.config.settings import Settings
@@ -44,16 +45,24 @@ _USERS = {
 
 
 def _seed(service_bundle: ServiceBundle) -> None:
-    """Embed and index the fat knowledge base and the service catalog.
+    """Embed and index the knowledge bases and the service catalog.
 
     The fat documents are embedded on their full text and indexed via
     ``upsert_fat_chunks``, which stores the slim projection for search and the
-    fat body for on-demand fetch - the fat/slim split.
+    fat body for on-demand fetch - the fat/slim split. The flat chunks (the
+    single-representation model that predates that split) are indexed
+    alongside it via ``upsert_chunks``, so ``--flat-demo`` has a real index to
+    search rather than an unused fixture.
     """
     _, store, embedder, catalog = service_bundle
     fats = load_fat_knowledge_base(_DATA_DIR / "knowledge_base_fat.json")
     vectors = embedder.embed_many([f.text for f in fats])
     store.upsert_fat_chunks(fats, vectors)
+
+    flat_chunks = load_knowledge_base(_DATA_DIR / "knowledge_base.json")
+    flat_vectors = embedder.embed_many([c.text for c in flat_chunks])
+    store.upsert_chunks(flat_chunks, flat_vectors)
+
     catalog.upsert_services(load_service_catalog(_DATA_DIR / "service_catalog.json"))
 
 
@@ -160,6 +169,27 @@ def run_fatslim_demo(bundle: ServiceBundle, users: dict[str, UserContext]) -> No
     print()
 
 
+def run_flat_demo(bundle: ServiceBundle, users: dict[str, UserContext]) -> None:
+    """Show the flat, pre fat/slim ``KnowledgeChunk`` model, for contrast.
+
+    Same ACL probe as :func:`run_acl_demo`, but run against ``search_chunks``
+    - a single-representation index where the full text and its citation
+    metadata live in one record, with no separate ``JSON.GET`` fetch. The
+    access-control guarantee is identical: the filter runs inside the search,
+    never as a post-filter, whichever model is doing the searching.
+    """
+    _, store, embedder, _ = bundle
+    probe = "security post mortem for the payments outage root cause"
+    vector = embedder.embed_one(probe)
+    print(f"\nflat-chunk probe: '{probe}'\n")
+    for user_id in ("carol", "alice", "dan"):
+        user = users[user_id]
+        chunks = store.search_chunks(vector, user, top_k=3)
+        sources = [c.source for c in chunks] or ["(nothing visible)"]
+        groups = ",".join(user.acl_groups) or "(no groups)"
+        print(f"  [{user_id:5} groups={groups:24}] -> {', '.join(sources)}")
+
+
 def main() -> None:
     """Parse arguments, compose the service, seed data, and answer."""
     parser = argparse.ArgumentParser(description="Meridian knowledge assistant (reference).")
@@ -175,6 +205,9 @@ def main() -> None:
     parser.add_argument("--acl-demo", action="store_true", help="Show the ACL retrieval filter.")
     parser.add_argument("--structured-demo", action="store_true", help="Show the structured query path.")
     parser.add_argument("--fatslim-demo", action="store_true", help="Show the fat/slim retrieval split.")
+    parser.add_argument(
+        "--flat-demo", action="store_true", help="Show the flat, pre fat/slim knowledge-chunk model."
+    )
     args = parser.parse_args()
 
     settings = Settings.from_env()
@@ -193,6 +226,10 @@ def main() -> None:
 
     if args.fatslim_demo:
         run_fatslim_demo(bundle, _USERS)
+        return
+
+    if args.flat_demo:
+        run_flat_demo(bundle, _USERS)
         return
 
     if args.demo or not args.ask:

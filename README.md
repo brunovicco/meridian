@@ -121,7 +121,7 @@ uv run python -m meridian.interfaces.cli.main --acl-demo
 ACL probe: retrieving 'security post mortem for the payments outage root cause'
 
   [carol groups=security             ] -> Security Post-Mortem, Credential Rotation Guide
-  [alice groups=payments,platform    ] -> Payments Service Auth Guide, Database Failover Runbook, ...
+  [alice groups=payments,platform    ] -> Payments Service Auth Guide, Transfer API Reference, Database Failover Runbook
   [dan   groups=(no groups)          ] -> (nothing visible)
 ```
 
@@ -180,12 +180,12 @@ fat/slim probe: 'how do I configure authentication...' as alice
 
   Phase 1 - slim search (cheap, projections only):
     · Payments Service Authentication  [snippet: To configure authentication for the payments...]
-    · Database Failover Procedure       [snippet: For a database failover, first confirm...]
-    · Gateway Rate Limiting             [snippet: The gateway rate limiter uses a token bucket...]
+    · Credential Rotation              [snippet: To rotate a service credential, generate a new...]
+    · Database Failover Procedure      [snippet: For a database failover, first confirm the...]
 
   Phase 2 - fat fetch (JSON.GET) for survivors only:
-    · Payments Service Authentication  owner=payments  updated=2025-11-02  chars=394
-    · Database Failover Procedure       owner=sre       updated=2025-12-01  chars=371
+    · Payments Service Authentication  owner=payments  updated=2026-02-02  chars=687
+    · Credential Rotation              owner=platform  updated=2026-01-30  chars=718
 ```
 
 The **slim projection** (title, snippet, source, ACL) is an indexed hash the KNN
@@ -195,6 +195,35 @@ the survivors that will actually enter the generation context. The `RagPipeline`
 runs exactly this flow - `search_slim` → select survivors → `fetch_fat` - so the
 fat payload is paid for a handful of times per query, not once per candidate.
 Each stage gets the payload it needs, right-sized end to end.
+
+---
+
+## Before the split: a flat retrieval model
+
+Alongside the fat/slim index, the same knowledge is also seeded into a
+simpler, older model: one flat `KnowledgeChunk` record per document, full
+text and citation metadata together, no separate `JSON.GET` fetch. It exists
+to make the fat/slim split's cost trade-off concrete by comparison, and it
+carries the identical access-control guarantee.
+
+```bash
+uv run python -m meridian.interfaces.cli.main --flat-demo
+```
+
+```
+flat-chunk probe: 'security post mortem for the payments outage root cause'
+
+  [carol groups=security                ] -> Security Post-Mortem, Credential Rotation Guide
+  [alice groups=payments,platform       ] -> Payments Service Auth Guide, Database Failover Runbook, Transfer API Reference
+  [dan   groups=(no groups)             ] -> (nothing visible)
+```
+
+Same probe, same ACL filter applied inside the search - `search_chunks`
+instead of `search_slim` - and the same outcome: Carol sees the restricted
+post-mortem, Alice never does, Dan sees nothing. The difference is cost, not
+security: every candidate here carries its full text into the search index,
+so ranking pays for the whole document on every candidate, not just the
+survivors. That's the bill the fat/slim split above exists to avoid.
 
 ---
 
@@ -291,15 +320,11 @@ make demo        # scripted end-to-end demo
 make acl-demo    # access-control filter in isolation
 make structured-demo  # structured query compiled to RediSearch
 make fatslim-demo     # fat/slim retrieval split
+make flat-demo        # flat, pre fat/slim knowledge-chunk model
 make test        # test suite
 make check       # lint + typecheck + test
 make redis-up    # start Redis Stack
 ```
-
-Conventions: everything in English, every module/class/public function
-docstringed (Google style), full type hints, `ruff` for lint and format. The
-agent harness in [`CLAUDE.md`](./CLAUDE.md) documents the architecture rules and
-the guardrails that must not regress.
 
 ---
 
@@ -315,3 +340,17 @@ with a grounding reward) and runs once you install the `groq` extra and set
 `GROQ_API_KEY`; without them the system falls back to the fake provider so the
 default demo always runs. The Azure providers are scaffolded to the point where
 the only missing piece is the external SDK call.
+
+**Content sources.** The prose under `data/catalog/` is original writing for
+this fictional demo, informed by publicly documented engineering practices:
+retry/backoff-with-jitter, failover discipline, and SLO/error-budget framing
+draw on ideas from Google's *Site Reliability Engineering* book (free at
+sre.google/books, CC BY-NC-ND 4.0) and its blameless-postmortem culture;
+token-bucket rate limiting draws on public CNCF/Envoy/Kubernetes
+rate-limiting documentation (CC BY 4.0); the idempotency-key pattern draws on
+publicly documented conventions used by major payment APIs; credential
+rotation draws on OWASP secret-management guidance. No text is copied from
+these sources - everything here is original paraphrase written for this
+repository. The `wiki.internal/...` URLs in the fixtures are fictional
+placeholders for an invented internal wiki, not links to the real sources
+above.

@@ -99,7 +99,7 @@ uv run python -m meridian.interfaces.cli.main --acl-demo
 ACL probe: retrieving 'security post mortem for the payments outage root cause'
 
   [carol groups=security             ] -> Security Post-Mortem, Credential Rotation Guide
-  [alice groups=payments,platform    ] -> Payments Service Auth Guide, Database Failover Runbook, ...
+  [alice groups=payments,platform    ] -> Payments Service Auth Guide, Transfer API Reference, Database Failover Runbook
   [dan   groups=(no groups)          ] -> (nothing visible)
 ```
 
@@ -126,7 +126,7 @@ uv run python -m meridian.interfaces.cli.main --structured-demo
       - api-gateway (team platform, tier1)
 ```
 
-O `ServiceQueryBuilder` (`application/query/`) classifica cada campo de filtro como **TAG** (exato), **TEXT** (fuzzy com regras de tokenização) ou **NUMERIC** (intervalo) e compila uma expressão RediSearch. Duas propriedades são estruturais: a cláusula de visibilidade é sempre prefixada e o resultado passa por um **sanitizador** que rejeita verbos de agregação, entrada excessivamente longa e caracteres de controle, falhando fechado para uma consulta impossível ainda escopada por ACL.
+O `ServiceQueryBuilder` (`application/query/`) classifica cada campo de filtro como **TAG** (exato), **TEXT** (fuzzy com regras de tokenização) ou **NUMERIC** (intervalo) e compila uma expressão RediSearch. Duas propriedades são estruturais: a cláusula de visibilidade é sempre prefixada (quem chama não consegue construir uma consulta sem escopo), e o resultado passa por um **sanitizador** que rejeita verbos de agregação, entrada excessivamente longa e caracteres de controle, falhando fechado para uma consulta impossível ainda escopada por ACL. É a mesma lição, em código, que uma vez transformou uma abordagem de RAG sobre dados tabulares que não funcionava numa abordagem de texto-para-consulta: o padrão segue o formato dos dados.
 
 ---
 
@@ -142,16 +142,36 @@ uv run python -m meridian.interfaces.cli.main --fatslim-demo
 fat/slim probe: 'how do I configure authentication...' as alice
 
   Phase 1 - slim search (cheap, projections only):
-    · Payments Service Authentication   [snippet: To configure authentication for the payments...]
-    · Database Failover Procedure       [snippet: For a database failover, first confirm...]
-    · Gateway Rate Limiting             [snippet: The gateway rate limiter uses a token bucket...]
+    · Payments Service Authentication  [snippet: To configure authentication for the payments...]
+    · Credential Rotation              [snippet: To rotate a service credential, generate a new...]
+    · Database Failover Procedure      [snippet: For a database failover, first confirm the...]
 
   Phase 2 - fat fetch (JSON.GET) for survivors only:
-    · Payments Service Authentication   owner=payments  updated=2025-11-02  chars=394
-    · Database Failover Procedure       owner=sre       updated=2025-12-01  chars=371
+    · Payments Service Authentication  owner=payments  updated=2026-02-02  chars=687
+    · Credential Rotation              owner=platform  updated=2026-01-30  chars=718
 ```
 
-A **projeção slim** (título, snippet, fonte, ACL) é um hash indexado que o KNN retorna,  pequeno, rápido, suficiente para ranquear e citar. O **documento fat** (texto completo mais metadados ricos) é um corpo RedisJSON buscado por `JSON.GET`, e apenas para os sobreviventes que entrarão no contexto de geração. O `RagPipeline` executa exatamente esse fluxo: `search_slim` → selecionar sobreviventes → `fetch_fat` - então o payload fat é pago poucas vezes por consulta, nunca uma vez por candidato.
+A **projeção slim** (título, snippet, fonte, ACL) é um hash indexado que o KNN retorna - pequeno, rápido, suficiente para ranquear e citar. O **documento fat** (texto completo mais metadados ricos) é um corpo RedisJSON buscado por `JSON.GET`, e apenas para os sobreviventes que entrarão no contexto de geração. O `RagPipeline` executa exatamente esse fluxo: `search_slim` → selecionar sobreviventes → `fetch_fat` - então o payload fat é pago poucas vezes por consulta, nunca uma vez por candidato.
+
+---
+
+## Antes do split: um modelo de recuperação flat
+
+Além do índice fat/slim, o mesmo conhecimento também é indexado num modelo mais simples e antigo: um único registro `KnowledgeChunk` flat por documento, com texto completo e metadados de citação juntos, sem um `JSON.GET` separado. Ele existe para tornar concreto, por comparação, o trade-off de custo que o split fat/slim resolve, e carrega a mesma garantia de controle de acesso.
+
+```bash
+uv run python -m meridian.interfaces.cli.main --flat-demo
+```
+
+```
+flat-chunk probe: 'security post mortem for the payments outage root cause'
+
+  [carol groups=security                ] -> Security Post-Mortem, Credential Rotation Guide
+  [alice groups=payments,platform       ] -> Payments Service Auth Guide, Database Failover Runbook, Transfer API Reference
+  [dan   groups=(no groups)             ] -> (nothing visible)
+```
+
+Mesmo probe, mesmo filtro de ACL aplicado dentro da busca - `search_chunks` em vez de `search_slim` - e o mesmo resultado: Carol vê o post-mortem restrito, Alice nunca vê, Dan não vê nada. A diferença é de custo, não de segurança: aqui cada candidato carrega seu texto completo dentro do índice de busca, então o ranking paga pelo documento inteiro em cada candidato, não só nos sobreviventes. Essa é a conta que o split fat/slim acima existe para evitar.
 
 ---
 
@@ -173,7 +193,7 @@ Crucialmente, **o provedor fake é o padrão**, e o backend Groq degrada para el
 
 ## Observando a saúde do roteador
 
-Cada decisão de roteamento é registrada por um coletor de métricas (`infrastructure/metrics/`). Contadores em processo alimentam uma verificação rápida de degradação. Um backend Redis opcional persiste deltas bufferizados em um HASH com `HINCRBY`; um scheduler ou hook de encerramento chama `flush()` fora do caminho de requisição. O TTL remove o agregado após 24 horas sem escritas, e falhas do backend nunca quebram requisições.
+Cada decisão de roteamento é registrada por um coletor de métricas (`infrastructure/metrics/`). Contadores em processo alimentam uma verificação rápida de degradação - se uma fatia grande demais das decisões cair na rota genérica, o roteador pode estar desviando e precisa de recompilação. Um backend Redis opcional persiste deltas bufferizados em um HASH com `HINCRBY`; um scheduler ou hook de encerramento chama `flush()` fora do caminho de requisição. O TTL remove o agregado após 24 horas sem escritas, e falhas do backend nunca quebram requisições.
 
 ---
 
@@ -217,15 +237,16 @@ make demo        # demo end-to-end com script
 make acl-demo    # filtro de controle de acesso em isolamento
 make structured-demo  # consulta estruturada compilada para RediSearch
 make fatslim-demo     # divisão de recuperação fat/slim
+make flat-demo        # modelo flat de conhecimento, anterior ao split fat/slim
 make test        # suite de testes
 make check       # lint + typecheck + teste
 make redis-up    # iniciar Redis Stack
 ```
-
-Convenções: todo o código em inglês, docstrings em todos os módulos/classes/funções públicas (estilo Google), type hints completos, `ruff` para lint e formatação. O harness de agente em [`CLAUDE.md`](./CLAUDE.md) documenta as regras de arquitetura e os guardrails que não devem regredir.
 
 ---
 
 ## Notas sobre o escopo
 
 Este é um repositório de estudo/demo. Os provedores fake são léxicos, não semânticos; eles exercitam o encanamento de forma determinística, não a qualidade de um embedder real. Os thresholds do roteador são fornecidos com uma calibração separada para o backend fake (`domain/policies`), o que por si só é um ponto relevante: **thresholds são uma propriedade do modelo de embedding, então trocar de modelo significa recalibrar, não editar prompts.** O caminho DSPy + Groq é real (`dspy.Predict` + `dspy.Refine` com recompensa de fundamentação) e funciona assim que você instala o extra `groq` e define `GROQ_API_KEY`; sem eles o sistema cai no provedor fake para que o demo padrão sempre rode. Os provedores Azure estão scaffolded até o ponto em que a única peça faltando é a chamada SDK externa.
+
+**Fontes do conteúdo.** A prosa em `data/catalog/` é texto original escrito para este demo fictício, informado por práticas de engenharia publicamente documentadas: os padrões de retry/backoff-com-jitter, disciplina de failover e o framing de SLO/error-budget se apoiam em ideias do livro *Site Reliability Engineering* do Google (gratuito em sre.google/books, CC BY-NC-ND 4.0) e sua cultura de post-mortem "blameless"; o rate limiting por token bucket se apoia na documentação pública de rate limiting do CNCF/Envoy/Kubernetes (CC BY 4.0); o padrão de idempotency-key se apoia em convenções publicamente documentadas usadas por grandes APIs de pagamento; a rotação de credenciais se apoia na orientação da OWASP sobre gestão de segredos. Nenhum texto é copiado dessas fontes - tudo aqui é paráfrase original escrita para este repositório. As URLs `wiki.internal/...` nos fixtures são placeholders fictícios para uma wiki interna inventada, não links para as fontes reais acima.

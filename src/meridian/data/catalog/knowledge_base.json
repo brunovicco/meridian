@@ -2,56 +2,56 @@
   "chunks": [
     {
       "chunk_id": "auth-001",
-      "text": "To configure authentication for the payments service, register the service in the identity provider, request a client credential from the platform team, and set AUTH_CLIENT_ID and AUTH_CLIENT_SECRET as environment variables. The service exchanges these for a short-lived bearer token at startup and refreshes it every fifteen minutes.",
+      "text": "To configure authentication for the payments service, register the service as an OAuth2 client with the identity provider and request a client credential from the platform team. Set AUTH_CLIENT_ID and AUTH_CLIENT_SECRET as environment variables; at startup the service exchanges them for a short-lived bearer token via the client-credentials grant, requesting only the scope its own endpoints need. The token is cached in memory and refreshed a few minutes before it expires.",
       "source": "Payments Service Auth Guide",
       "source_url": "https://wiki.internal/payments/auth",
       "acl_groups": ["payments", "platform"]
     },
     {
       "chunk_id": "retry-001",
-      "text": "The notifications pipeline retries failed deliveries with exponential backoff and jitter. The base delay is 500 milliseconds, doubling each attempt up to five attempts. After the budget is exhausted the message is moved to a dead-letter queue for manual inspection.",
+      "text": "The notifications pipeline retries failed deliveries with exponential backoff and full jitter, a pattern chosen specifically to avoid retry storms when many clients back off in lockstep. The base delay is 500 milliseconds; each attempt's wait is chosen uniformly at random up to the doubling delay, for up to five attempts. After the retry budget is exhausted, the message moves to a dead-letter queue rather than being retried indefinitely.",
       "source": "Notifications Runbook",
       "source_url": "https://wiki.internal/notifications/runbook",
       "acl_groups": ["notifications", "platform"]
     },
     {
       "chunk_id": "failover-001",
-      "text": "For a database failover, first confirm the primary is unhealthy via the health dashboard, then promote the standby replica using the failover script. Update the connection pool to point at the new primary. Expect up to thirty seconds of write unavailability during promotion.",
+      "text": "For a database failover, first confirm the primary is unhealthy via the health dashboard and quorum checks, not a single missed heartbeat, to avoid a split-brain promotion. Then promote the standby replica using the failover script and update the connection pool to point at the new primary; expect up to thirty seconds of write unavailability during promotion, the recovery-time objective for this database tier.",
       "source": "Database Failover Runbook",
       "source_url": "https://wiki.internal/db/failover",
       "acl_groups": ["platform", "sre"]
     },
     {
       "chunk_id": "ratelimit-001",
-      "text": "The gateway rate limiter uses a token bucket per client. Each client gets a bucket refilled at a configured rate. Requests consume one token; when the bucket is empty the gateway returns HTTP 429 with a Retry-After header. Buckets are stored in Redis so the limit is shared across gateway replicas.",
+      "text": "The gateway rate limiter uses a token bucket per client: a bucket has a fixed capacity and refills at a configured rate, which lets it absorb short bursts while still enforcing a steady average. Each request consumes one token; when the bucket is empty, the gateway returns HTTP 429 Too Many Requests with a Retry-After header. Buckets are stored in Redis so the limit is enforced globally, shared across every gateway replica.",
       "source": "Gateway Architecture",
       "source_url": "https://wiki.internal/gateway/ratelimit",
       "acl_groups": ["platform", "sre"]
     },
     {
       "chunk_id": "idem-001",
-      "text": "The transfer API enforces idempotency through an Idempotency-Key header. The first request with a given key is processed and its result cached; subsequent requests with the same key return the cached result without reprocessing. Keys expire after twenty-four hours.",
+      "text": "The transfer API enforces idempotency through an Idempotency-Key header, the same pattern used by major payment APIs: the client generates one unique key per logical transfer and sends it on every attempt of that same operation. The first request with a given key is processed and its response cached; any later request with the same key returns the cached response without reprocessing. Keys expire after twenty-four hours.",
       "source": "Transfer API Reference",
       "source_url": "https://wiki.internal/transfer/idempotency",
       "acl_groups": ["payments", "platform"]
     },
     {
       "chunk_id": "secret-001",
-      "text": "To rotate a service credential, generate a new secret in the vault, deploy it as a new environment variable alongside the old one, confirm the service accepts both, then remove the old secret. Never rotate by deleting the old secret first, as in-flight requests may still be using it.",
+      "text": "To rotate a service credential, generate a new secret in the vault and deploy it as a new environment variable alongside the old one, so both are simultaneously valid. Confirm the service accepts requests authenticated with either secret, then remove the old one only after confirming no in-flight traffic is still using it. Never rotate by deleting the old secret first: any request already in flight fails authentication the moment the old secret disappears.",
       "source": "Credential Rotation Guide",
       "source_url": "https://wiki.internal/security/rotation",
       "acl_groups": ["platform", "security"]
     },
     {
       "chunk_id": "fraud-sla-001",
-      "text": "The fraud scoring service has a p99 latency SLA of 120 milliseconds and an availability target of 99.95 percent. Scoring requests that exceed the latency budget fall back to a conservative rule-based score rather than blocking the transaction.",
+      "text": "The fraud scoring service publishes a p99 latency SLI of 120 milliseconds and an availability objective of 99.95 percent, backed by an error budget: sustained breaches gate further risky releases until the budget recovers. Scoring requests that would exceed the latency budget don't block the transaction; they fall back to a conservative rule-based score instead.",
       "source": "Fraud Scoring SLA",
       "source_url": "https://wiki.internal/fraud/sla",
       "acl_groups": ["fraud", "platform"]
     },
     {
       "chunk_id": "restricted-001",
-      "text": "The incident post-mortem for the payments outage details the root cause in the credential rotation process and the remediation steps taken. This document is restricted to the security team.",
+      "text": "This is a blameless post-mortem for the payments outage: it documents contributing factors and process gaps, not individual fault. Root cause: a credential rotation deleted the old secret before the new one had finished propagating, so in-flight requests failed authentication. This document is restricted to the security team.",
       "source": "Security Post-Mortem",
       "source_url": "https://wiki.internal/security/postmortem-2024",
       "acl_groups": ["security"]
