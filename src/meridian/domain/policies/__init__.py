@@ -86,6 +86,44 @@ FAKE_INTENT_THRESHOLDS: dict[str, float] = {
     "greeting": 0.20,
 }
 
+# Calibration for the local, real semantic embedder (sentence-transformers'
+# all-MiniLM-L6-v2). A general-purpose sentence embedder gives correct
+# positive/negative separation but a different absolute geometry than the
+# production model this reference is modelled on: cosine similarity between
+# on-topic-but-different-intent phrases (e.g. "who owns the payments service"
+# vs. "how do I configure authentication for the payments service") sits
+# around 0.5-0.6 just from shared domain vocabulary, well above what the
+# production ``negative_penalty`` of 0.8 was tuned to tolerate. Left at the
+# production calibration, a correctly top-ranked, unambiguous match routinely
+# scores 0.4-0.6 - under every production threshold - so the demo asks for
+# disambiguation on almost every query even though the ranking itself is
+# right and the margin to the runner-up is large.
+#
+# These numbers were derived empirically, not guessed: scored the catalog's
+# own confusable pairs plus ~20 hand-written paraphrases per intent (not
+# copy-pasted from the catalog) against MiniLM, and picked values that sit
+# between the observed true-positive floor (~0.4-0.6 for a correct, unambiguous
+# top pick) and the observed true-negative ceiling (~0.1-0.2 for genuinely
+# out-of-scope queries like "what's the capital of France"). The lower
+# negative_penalty keeps ranking correctness (already robust across penalty
+# values) from being swamped by MiniLM's coarser separation. As with the fake
+# calibration, this is a starting point to refine against real traffic, not a
+# permanent constant - see the note on `for_embedding_backend`.
+LOCAL_AMBIGUITY = AmbiguityConfig(
+    ambig_min=0.35,
+    ambig_delta=0.05,
+    high_confidence_margin=0.15,
+    negative_penalty=0.5,
+    default_intent_threshold=0.35,
+)
+
+LOCAL_INTENT_THRESHOLDS: dict[str, float] = {
+    "knowledge_qa": 0.32,
+    "code_lookup": 0.35,
+    "structured_query": 0.38,
+    "greeting": 0.30,
+}
+
 
 @dataclass(frozen=True)
 class RoutingPolicy:
@@ -111,9 +149,13 @@ class RoutingPolicy:
     def for_embedding_backend(backend: str) -> "RoutingPolicy":
         """Return a policy calibrated for the active embedding backend.
 
-        The fake hashing embedder needs its own thresholds because its score
-        distribution differs from a real semantic model's. Any other backend
-        uses the production calibration.
+        Thresholds are a property of the embedding model's score geometry, not
+        of the application: the fake hashing embedder and the local MiniLM
+        embedder each need their own calibration because neither matches the
+        production model's distribution. The Azure backend is left on the
+        production calibration - it *is* the production embedder this
+        reference models, so no separate profile exists (or has been
+        validated) for it.
 
         :param backend: The embedding backend name (``fake``, ``azure``, or ``local``).
         :returns: A :class:`RoutingPolicy` calibrated for that backend.
@@ -122,6 +164,12 @@ class RoutingPolicy:
             return RoutingPolicy(
                 ambiguity=FAKE_AMBIGUITY,
                 intent_thresholds=dict(FAKE_INTENT_THRESHOLDS),
+                intent_to_route=dict(INTENT_TO_ROUTE),
+            )
+        if backend == "local":
+            return RoutingPolicy(
+                ambiguity=LOCAL_AMBIGUITY,
+                intent_thresholds=dict(LOCAL_INTENT_THRESHOLDS),
                 intent_to_route=dict(INTENT_TO_ROUTE),
             )
         return RoutingPolicy()
