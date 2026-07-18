@@ -9,7 +9,7 @@
       "lifecycle": "active",
       "has_owner": true,
       "dependencies": 6,
-      "description": "Core payments processing API",
+      "description": "Core payments processing API; issues and validates OAuth2 client-credential tokens for downstream calls and is the tier-1 system of record for payment state",
       "visibility": ["payments", "platform"]
     },
     {
@@ -21,7 +21,7 @@
       "lifecycle": "active",
       "has_owner": true,
       "dependencies": 4,
-      "description": "Money transfer orchestration with idempotency",
+      "description": "Money transfer orchestration; enforces request idempotency via an Idempotency-Key header so a retried transfer request never double-moves funds",
       "visibility": ["payments", "platform"]
     },
     {
@@ -33,7 +33,7 @@
       "lifecycle": "active",
       "has_owner": true,
       "dependencies": 3,
-      "description": "Delivery pipeline with retry and dead-letter queue",
+      "description": "Delivery pipeline with exponential-backoff-and-jitter retries and a dead-letter queue for deliveries that exhaust their retry budget",
       "visibility": ["notifications", "platform"]
     },
     {
@@ -45,7 +45,7 @@
       "lifecycle": "active",
       "has_owner": true,
       "dependencies": 9,
-      "description": "Edge gateway with token-bucket rate limiting",
+      "description": "Edge gateway enforcing per-API-key token-bucket rate limiting backed by Redis, shared across all gateway replicas",
       "visibility": ["platform", "sre"]
     },
     {
@@ -57,7 +57,7 @@
       "lifecycle": "active",
       "has_owner": true,
       "dependencies": 5,
-      "description": "Real-time fraud scoring with rule-based fallback",
+      "description": "Real-time fraud scoring with a p99 latency SLO and a conservative rule-based fallback when the scoring path can't answer within budget",
       "visibility": ["fraud", "platform"]
     },
     {
@@ -69,7 +69,7 @@
       "lifecycle": "active",
       "has_owner": true,
       "dependencies": 2,
-      "description": "Authentication and credential issuance",
+      "description": "Issues and rotates OAuth2 client-credential tokens for internal services; supports zero-downtime rotation via a dual-secret overlap window",
       "visibility": ["platform", "security"]
     },
     {
@@ -81,7 +81,7 @@
       "lifecycle": "deprecated",
       "has_owner": false,
       "dependencies": 1,
-      "description": "Deprecated nightly batch job, no current owner",
+      "description": "Deprecated nightly batch job with no current owner; scheduled for decommission once its last downstream consumer migrates off",
       "visibility": ["platform", "sre"]
     }
   ]

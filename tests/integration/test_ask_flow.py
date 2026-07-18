@@ -17,6 +17,7 @@ from meridian.domain.models import RouteType, UserContext
 from meridian.infrastructure.config.catalog_loader import (
     load_catalog,
     load_fat_knowledge_base,
+    load_knowledge_base,
     load_service_catalog,
 )
 from meridian.infrastructure.config.settings import Settings
@@ -41,6 +42,10 @@ def _build() -> tuple[AskService, VectorStore, EmbeddingProvider, CatalogStore]:
     )
     fats = load_fat_knowledge_base(_DATA / "knowledge_base_fat.json")
     store.upsert_fat_chunks(fats, embedder.embed_many([f.text for f in fats]))
+
+    flat_chunks = load_knowledge_base(_DATA / "knowledge_base.json")
+    store.upsert_chunks(flat_chunks, embedder.embed_many([c.text for c in flat_chunks]))
+
     catalog.upsert_services(load_service_catalog(_DATA / "service_catalog.json"))
     return service, store, embedder, catalog
 
@@ -71,6 +76,21 @@ def test_acl_filter_blocks_unauthorised_source() -> None:
 
     security_sources = {c.source for c in store.search_slim(vector, security_user, 5)}
     payments_sources = {c.source for c in store.search_slim(vector, payments_user, 5)}
+
+    assert "Security Post-Mortem" in security_sources
+    assert "Security Post-Mortem" not in payments_sources
+
+
+def test_flat_chunk_acl_filter_blocks_unauthorised_source() -> None:
+    """The flat, pre fat/slim ``KnowledgeChunk`` path enforces the same ACL guarantee."""
+    _, store, embedder, _ = _build()
+    vector = embedder.embed_one("security post mortem payments outage root cause")
+
+    security_user = UserContext(user_id="carol", acl_groups=["security"])
+    payments_user = UserContext(user_id="alice", acl_groups=["payments", "platform"])
+
+    security_sources = {c.source for c in store.search_chunks(vector, security_user, 5)}
+    payments_sources = {c.source for c in store.search_chunks(vector, payments_user, 5)}
 
     assert "Security Post-Mortem" in security_sources
     assert "Security Post-Mortem" not in payments_sources

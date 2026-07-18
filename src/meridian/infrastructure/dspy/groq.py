@@ -64,7 +64,13 @@ def configure_groq_lm(
         return False
 
     lm = dspy.LM(model, api_key=key, api_base=api_base)  # pragma: no cover - network
-    dspy.configure(lm=lm)  # pragma: no cover - network
+    # dspy.Refine's own internal feedback step (OfferFeedback) JSON-encodes its
+    # float/list arguments before passing them to a signature that types them
+    # as float/list[str], so its type checker flags a mismatch against dspy's
+    # own output on every refinement retry. This is internal to dspy.Refine,
+    # not a signal about our signatures, so the warning is disabled here
+    # rather than suppressed at the logging layer.
+    dspy.configure(lm=lm, warn_on_type_mismatch=False)  # pragma: no cover - network
     return True
 
 

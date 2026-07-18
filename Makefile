@@ -1,6 +1,6 @@
 # Common developer tasks. Run `make help` for the list.
 
-.PHONY: help install demo acl-demo test lint format format-check typecheck redis-up redis-down check
+.PHONY: help install demo acl-demo structured-demo fatslim-demo flat-demo test lint format format-check typecheck redis-up redis-down check
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -20,6 +20,9 @@ structured-demo:  ## Show the structured query path compiling to RediSearch
 
 fatslim-demo:  ## Show the fat/slim retrieval split (slim search, fat fetch)
 	uv run python -m meridian.interfaces.cli.main --fatslim-demo
+
+flat-demo:  ## Show the flat, pre fat/slim knowledge-chunk model, for contrast
+	uv run python -m meridian.interfaces.cli.main --flat-demo
 
 test:  ## Run the test suite
 	uv run pytest
